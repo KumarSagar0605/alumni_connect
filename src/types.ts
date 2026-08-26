@@ -46,6 +46,9 @@ export interface Project {
   joined: boolean;
   badge: 'Recruiting' | 'Needs Mentor' | 'In Progress';
   members: string[];
+  milestones?: { name: string; done: boolean }[];
+  techStack?: string[];
+  lead?: string;
 }
 
 export interface Event {
@@ -116,4 +119,5 @@ export interface Message {
   text: string;
   timestamp: string;
   isMe: boolean;
+  mentorId?: string;
 }

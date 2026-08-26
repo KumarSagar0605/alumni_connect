@@ -1,14 +1,18 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Plus } from 'lucide-react';
 import { Project } from '../types';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import { PageSkeleton } from '../components/Skeleton';
+import ProjectDetail from '../components/ProjectDetail';
 
 export default function ProjectsPage() {
+  const navigate = useNavigate();
   const {
     projects,
     setProjects,
+    clubs,
     searchQuery,
     setSearchQuery,
     addToast,
@@ -17,6 +21,7 @@ export default function ProjectsPage() {
   } = useApp();
 
   const [projectFilter, setProjectFilter] = useState<'All' | 'Recruiting' | 'Needs Mentor' | 'Joined'>('All');
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   const filteredProjects = projects.filter((proj) => {
     const matchesSearch =
@@ -82,6 +87,31 @@ export default function ProjectsPage() {
     }
   };
 
+  if (selectedProjectId) {
+    const project = projects.find((p) => p.id === selectedProjectId);
+    if (!project) {
+      setSelectedProjectId(null);
+      return null;
+    }
+    return (
+      <div className="space-y-8 pb-12 font-sans text-slate-800">
+        <ProjectDetail
+          project={project}
+          onBack={() => setSelectedProjectId(null)}
+          onToggleJoin={toggleJoinProject}
+          onToggleMentor={toggleMentorProject}
+          onNavigateToClub={(clubName) => {
+            const matchedClub = clubs.find((c) => c.name.toLowerCase().includes(clubName.toLowerCase()) || clubName.toLowerCase().includes(c.name.toLowerCase()));
+            if (matchedClub) navigate('/clubs');
+            else addToast(`Opened details for ${clubName}`, 'info');
+          }}
+          onNavigateToMessages={() => navigate('/messages')}
+          onAddToast={addToast}
+        />
+      </div>
+    );
+  }
+
   if (dataLoading) {
     return <PageSkeleton />;
   }
@@ -136,7 +166,8 @@ export default function ProjectsPage() {
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              className="bg-white rounded-2xl border border-slate-100 p-5 shadow-xs group flex flex-col gap-4"
+              onClick={() => setSelectedProjectId(project.id)}
+              className="bg-white rounded-2xl border border-slate-100 p-5 shadow-xs group flex flex-col gap-4 cursor-pointer hover:shadow-md hover:border-[#9E2A2B]/10 transition-all"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -200,7 +231,7 @@ export default function ProjectsPage() {
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   {project.needsMentor && (
                     <button
-                      onClick={() => toggleMentorProject(project.id)}
+                      onClick={(e) => { e.stopPropagation(); toggleMentorProject(project.id); }}
                       className={`flex-1 sm:flex-initial px-4 py-2 text-xs font-bold transition-all border rounded-xl cursor-pointer ${
                         project.mentored
                           ? 'bg-rose-50 border-rose-100 text-[#9E2A2B]'
@@ -211,7 +242,7 @@ export default function ProjectsPage() {
                     </button>
                   )}
                   <button
-                    onClick={() => toggleJoinProject(project.id)}
+                    onClick={(e) => { e.stopPropagation(); toggleJoinProject(project.id); }}
                     className={`flex-1 sm:flex-initial px-5 py-2 text-xs font-bold transition-all border rounded-xl cursor-pointer ${
                       project.joined
                         ? 'bg-slate-100 border-slate-200 text-slate-600 shadow-xs'
