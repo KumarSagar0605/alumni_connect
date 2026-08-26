@@ -1,0 +1,6 @@
+{
+  "name": "Communities in Atria",
+  "description": "Find clubs, join projects, and connect with mentors at Atria.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
