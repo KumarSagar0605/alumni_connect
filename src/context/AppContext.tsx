@@ -80,13 +80,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ]);
 
         if (clubsRes.error) console.error('Clubs fetch error:', clubsRes.error.message);
-        else if (clubsRes.data) setClubs(clubsRes.data);
+        else if (clubsRes.data) setClubs(clubsRes.data.map((c: any) => ({
+          ...c,
+          membersCount: c.members_count,
+          equipmentAccess: c.equipment_access,
+          weeklyMeetings: c.weekly_meetings,
+          logo: c.logo || c.image,
+        })));
 
         if (projectsRes.error) console.error('Projects fetch error:', projectsRes.error.message);
-        else if (projectsRes.data) setProjects(projectsRes.data);
+        else if (projectsRes.data) setProjects(projectsRes.data.map((p: any) => ({
+          ...p,
+          clubName: p.club_name,
+          needsMentor: p.needs_mentor,
+        })));
 
         if (eventsRes.error) console.error('Events fetch error:', eventsRes.error.message);
-        else if (eventsRes.data) setEvents(eventsRes.data);
+        else if (eventsRes.data) setEvents(eventsRes.data.map((e: any) => ({
+          ...e,
+          date: e.event_date,
+          registeredCount: e.registered_count,
+        })));
 
         if (mentorsRes.error) console.error('Mentors fetch error:', mentorsRes.error.message);
         else if (mentorsRes.data) setMentors(mentorsRes.data);
@@ -133,9 +147,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             category: data.category,
             description: data.description,
             image: data.image,
+            logo: data.logo || data.image,
             tag: data.tag,
+            tags: data.tags,
+            equipment_access: data.equipmentAccess,
+            weekly_meetings: data.weeklyMeetings,
+            resources: data.resources,
             members_count: data.membersCount,
-            joined: data.joined
+            joined: data.joined,
           }])
           .select()
           .single();
@@ -145,7 +164,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const formattedClub = { ...newClub, membersCount: newClub.members_count };
+        const formattedClub = {
+          ...newClub,
+          membersCount: newClub.members_count,
+          equipmentAccess: newClub.equipment_access,
+          weeklyMeetings: newClub.weekly_meetings,
+          logo: newClub.logo || newClub.image,
+        };
         setClubs((prev) => [formattedClub, ...prev]);
         addToast(`Successfully launched new club: "${data.name}"!`, 'success');
       } else if (type === 'project') {
@@ -161,7 +186,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             progress: data.progress,
             mentored: data.mentored,
             joined: data.joined,
-            members: data.members
+            members: data.members,
           }])
           .select()
           .single();
@@ -188,8 +213,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             event_date: data.date,
             image: data.image,
             badge: data.badge,
+            time: data.time,
+            location: data.location,
+            host: data.host,
             registered: data.registered,
-            registered_count: data.registeredCount
+            registered_count: data.registeredCount,
           }])
           .select()
           .single();
@@ -202,7 +230,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const formattedEvent = {
           ...newEvent,
           date: newEvent.event_date,
-          registeredCount: newEvent.registered_count
+          registeredCount: newEvent.registered_count,
         };
         setEvents((prev) => [formattedEvent, ...prev]);
         addToast(`Successfully scheduled new event: "${data.name}"!`, 'success');

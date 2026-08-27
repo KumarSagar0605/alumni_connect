@@ -13,22 +13,44 @@ import {
   ChevronRight,
   ExternalLink,
   MessageCircle,
-  Sparkles
+  Sparkles,
+  Pencil,
+  X,
+  Check,
 } from 'lucide-react';
 import { Club } from '../types';
 
 interface ClubDetailProps {
   club: Club;
+  currentUser: any;
   onBack: () => void;
   onToggleJoin: (id: string) => void;
+  onSaveClub: (updates: Partial<Club>) => Promise<void>;
   onAddToast: (message: string, type?: 'success' | 'info') => void;
 }
 
-export default function ClubDetail({ club, onBack, onToggleJoin, onAddToast }: ClubDetailProps) {
+export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, onSaveClub, onAddToast }: ClubDetailProps) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [likesCount, setLikesCount] = useState<{ [key: number]: number }>({});
   const [hasLiked, setHasLiked] = useState<{ [key: number]: boolean }>({});
   const [rsvpConfirmed, setRsvpConfirmed] = useState(false);
+  const isCreator = currentUser && club.created_by && currentUser.id === club.created_by;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(club.name);
+  const [editDescription, setEditDescription] = useState(club.description);
+  const [editCategory, setEditCategory] = useState(club.category);
+
+  const handleSave = async () => {
+    await onSaveClub({ name: editName, description: editDescription, category: editCategory });
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditName(club.name);
+    setEditDescription(club.description);
+    setEditCategory(club.category);
+    setIsEditing(false);
+  };
 
   const handleLike = (index: number, initialLikes: number) => {
     if (hasLiked[index]) {
@@ -148,7 +170,7 @@ export default function ClubDetail({ club, onBack, onToggleJoin, onAddToast }: C
               {/* Club Avatar Logo */}
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border-4 border-white bg-[#F1F5F9] shadow-md flex items-center justify-center overflow-hidden shrink-0">
                 <img
-                  src={club.image}
+                  src={club.logo || club.image}
                   alt={club.name}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
@@ -172,7 +194,23 @@ export default function ClubDetail({ club, onBack, onToggleJoin, onAddToast }: C
             </div>
 
             {/* Action buttons row */}
-            <div className="flex items-center gap-2.5 shrink-0 self-end md:self-auto">
+              <div className="flex items-center gap-2.5 shrink-0 self-end md:self-auto">
+              {isCreator && (
+                isEditing ? (
+                  <>
+                    <button onClick={handleCancel} className="px-4 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
+                      <X className="w-3.5 h-3.5" /> Cancel
+                    </button>
+                    <button onClick={handleSave} className="px-4 py-2 rounded-full bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Save
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
+                    <Pencil className="w-3.5 h-3.5" /> Edit Club
+                  </button>
+                )
+              )}
               <button
                 onClick={() => {
                   onToggleJoin(club.id);
@@ -221,9 +259,21 @@ export default function ClubDetail({ club, onBack, onToggleJoin, onAddToast }: C
             {/* About Section */}
             <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-4 shadow-2xs">
               <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">About the Collective</h2>
-              <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                {club.description}
-              </p>
+              {isEditing ? (
+                <div className="space-y-3">
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#9E2A2B]/40 focus:ring-2 focus:ring-[#9E2A2B]/10 text-xs font-semibold text-slate-800" placeholder="Club name" />
+                  <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#9E2A2B]/40 focus:ring-2 focus:ring-[#9E2A2B]/10 text-xs font-semibold text-slate-800 cursor-pointer">
+                    <option value="Technology">Technology</option>
+                    <option value="Arts">Arts</option>
+                    <option value="Environment">Environment</option>
+                    <option value="Business">Business</option>
+                    <option value="Social">Social</option>
+                  </select>
+                  <textarea rows={4} value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#9E2A2B]/40 focus:ring-2 focus:ring-[#9E2A2B]/10 text-xs font-semibold text-slate-800 resize-none" placeholder="Club description" />
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 leading-relaxed font-medium">{club.description}</p>
+              )}
               
               {/* Category Tags */}
               <div className="flex flex-wrap gap-2 pt-2">

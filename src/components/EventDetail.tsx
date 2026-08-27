@@ -13,30 +13,58 @@ import {
   Info,
   Bookmark,
   ExternalLink,
-  Star
+  Star,
+  Pencil,
+  X,
+  Check,
 } from 'lucide-react';
 import { Event } from '../types';
 
 interface EventDetailProps {
   event: Event;
   allEvents: Event[];
+  currentUser: any;
   onBack: () => void;
   onToggleRegister: (id: string) => void;
   onSelectEvent: (id: string) => void;
   onNavigateToClub: (clubName: string) => void;
+  onSaveEvent: (updates: Partial<Event>) => Promise<void>;
   onAddToast: (message: string, type?: 'success' | 'info') => void;
 }
 
 export default function EventDetail({
   event,
   allEvents,
+  currentUser,
   onBack,
   onToggleRegister,
   onSelectEvent,
   onNavigateToClub,
+  onSaveEvent,
   onAddToast
 }: EventDetailProps) {
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const isCreator = currentUser && event.created_by && currentUser.id === event.created_by;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(event.name);
+  const [editDescription, setEditDescription] = useState(event.description);
+  const [editDate, setEditDate] = useState(event.date);
+  const [editCategory, setEditCategory] = useState(event.category);
+  const [editLocation, setEditLocation] = useState(event.location || '');
+
+  const handleSave = async () => {
+    await onSaveEvent({ name: editName, description: editDescription, date: editDate, category: editCategory, location: editLocation });
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditName(event.name);
+    setEditDescription(event.description);
+    setEditDate(event.date);
+    setEditCategory(event.category);
+    setEditLocation(event.location || '');
+    setIsEditing(false);
+  };
 
   // Generate dynamic/mock agenda items based on event id
   const getAgenda = () => {
@@ -177,13 +205,33 @@ export default function EventDetail({
         <div className="absolute inset-0 bg-linear-to-t from-slate-950 via-slate-950/45 to-transparent" />
 
         {/* Floating Back Button */}
-        <button
-          onClick={onBack}
-          className="absolute top-5 left-5 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-950/45 hover:bg-slate-950/65 text-white text-xs font-bold border border-white/10 shadow-xs backdrop-blur-xs transition-all cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Events</span>
-        </button>
+        <div className="absolute top-5 left-5 right-5 flex items-center justify-between">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-950/45 hover:bg-slate-950/65 text-white text-xs font-bold border border-white/10 shadow-xs backdrop-blur-xs transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Events</span>
+          </button>
+          {isCreator && (
+            <div className="flex items-center gap-2">
+              {isEditing ? (
+                <>
+                  <button onClick={handleCancel} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 cursor-pointer flex items-center gap-1">
+                    <X className="w-3.5 h-3.5" /> Cancel
+                  </button>
+                  <button onClick={handleSave} className="px-4 py-2 rounded-full bg-white text-[#9E2A2B] text-xs font-bold border border-white shadow-xs cursor-pointer flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> Save
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 cursor-pointer flex items-center gap-1">
+                  <Pencil className="w-3.5 h-3.5" /> Edit Event
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Text Details Container on the Bottom Left */}
         <div className="absolute bottom-6 left-6 right-6 space-y-3.5 text-white">
@@ -191,19 +239,37 @@ export default function EventDetail({
             <span className="px-3 py-1 bg-rose-600 text-white text-[10px] font-black rounded-md uppercase tracking-wider shadow-sm">
               Featured Series
             </span>
-            <span className="px-3 py-1 bg-white/20 backdrop-blur-xs text-white text-[10px] font-bold rounded-md uppercase tracking-wider border border-white/10">
-              {event.category}
-            </span>
+            {isEditing ? (
+              <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} className="px-3 py-1 bg-white/20 text-white text-[10px] font-bold rounded-md border border-white/20 focus:outline-none cursor-pointer">
+                <option value="Technology" className="text-slate-800">Technology</option>
+                <option value="Arts" className="text-slate-800">Arts</option>
+                <option value="Environment" className="text-slate-800">Environment</option>
+                <option value="Business" className="text-slate-800">Business</option>
+                <option value="Social" className="text-slate-800">Social</option>
+              </select>
+            ) : (
+              <span className="px-3 py-1 bg-white/20 backdrop-blur-xs text-white text-[10px] font-bold rounded-md uppercase tracking-wider border border-white/10">
+                {event.category}
+              </span>
+            )}
           </div>
 
-          <h1 className="text-xl sm:text-2xl md:text-3.5xl font-black tracking-tight leading-tight max-w-4xl font-sans text-shadow-sm">
-            {event.name}
-          </h1>
+          {isEditing ? (
+            <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 text-xl sm:text-2xl md:text-3.5xl font-black tracking-tight focus:outline-none focus:bg-white/20" placeholder="Event name" />
+          ) : (
+            <h1 className="text-xl sm:text-2xl md:text-3.5xl font-black tracking-tight leading-tight max-w-4xl font-sans text-shadow-sm">
+              {event.name}
+            </h1>
+          )}
 
           <div className="flex flex-wrap items-center gap-y-2 gap-x-5 text-[11px] sm:text-xs font-bold text-slate-100">
             <div className="flex items-center gap-1.5">
               <Calendar className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{getShortDate(event.date)}, 2024</span>
+              {isEditing ? (
+                <input value={editDate} onChange={(e) => setEditDate(e.target.value)} className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none w-32" placeholder="Date" />
+              ) : (
+                <span>{getShortDate(event.date)}, 2024</span>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-rose-400 shrink-0" />
@@ -211,7 +277,11 @@ export default function EventDetail({
             </div>
             <div className="flex items-center gap-1.5">
               <MapPin className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{event.location || 'Atria Grand Hall & Virtual (Hybrid)'}</span>
+              {isEditing ? (
+                <input value={editLocation} onChange={(e) => setEditLocation(e.target.value)} className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none w-40" placeholder="Location" />
+              ) : (
+                <span>{event.location || 'Atria Grand Hall & Virtual (Hybrid)'}</span>
+              )}
             </div>
           </div>
         </div>
@@ -229,12 +299,16 @@ export default function EventDetail({
               <Info className="w-5 h-5 text-[#9E2A2B]" />
               <span>About the Event</span>
             </h2>
-            <div className="text-sm text-slate-600 leading-relaxed font-medium space-y-4">
-              <p>{event.description}</p>
-              <p>
-                Whether you are a specialized student, an enthusiast looking to upgrade your portfolio, or simply curious about these creative methodologies, this collective event provides deep practical learnings, interactive roundtables, and structured mentoring slots. Register to claim credentials and coordinate in advance.
-              </p>
-            </div>
+            {isEditing ? (
+              <textarea rows={5} value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#9E2A2B]/40 focus:ring-2 focus:ring-[#9E2A2B]/10 text-xs font-semibold text-slate-800 resize-none" placeholder="Event description" />
+            ) : (
+              <div className="text-sm text-slate-600 leading-relaxed font-medium space-y-4">
+                <p>{event.description}</p>
+                <p>
+                  Whether you are a specialized student, an enthusiast looking to upgrade your portfolio, or simply curious about these creative methodologies, this collective event provides deep practical learnings, interactive roundtables, and structured mentoring slots. Register to claim credentials and coordinate in advance.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* EVENT AGENDA SECTION */}

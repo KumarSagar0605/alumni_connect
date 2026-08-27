@@ -32,6 +32,7 @@ export interface Club {
     avatar: string;
   }[];
   resources?: string[];
+  created_by?: string | null;
 }
 
 export interface Project {
@@ -49,6 +50,7 @@ export interface Project {
   milestones?: { name: string; done: boolean }[];
   techStack?: string[];
   lead?: string;
+  created_by?: string | null;
 }
 
 export interface Event {
@@ -64,6 +66,7 @@ export interface Event {
   host?: string;
   time?: string;
   location?: string;
+  created_by?: string | null;
 }
 
 export interface Mentor {

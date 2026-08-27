@@ -4,11 +4,13 @@ import { Search, Plus } from 'lucide-react';
 import { Project } from '../types';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../hooks/useAuth';
 import { PageSkeleton } from '../components/Skeleton';
 import ProjectDetail from '../components/ProjectDetail';
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     projects,
     setProjects,
@@ -97,6 +99,7 @@ export default function ProjectsPage() {
       <div className="space-y-8 pb-12 font-sans text-slate-800">
         <ProjectDetail
           project={project}
+          currentUser={user}
           onBack={() => setSelectedProjectId(null)}
           onToggleJoin={toggleJoinProject}
           onToggleMentor={toggleMentorProject}
@@ -106,6 +109,18 @@ export default function ProjectsPage() {
             else addToast(`Opened details for ${clubName}`, 'info');
           }}
           onNavigateToMessages={() => navigate('/messages')}
+          onSaveProject={async (updates) => {
+            try {
+              const { error } = await supabase.from('projects').update(updates).eq('id', project.id);
+              if (error) throw error;
+              setProjects((prev: Project[]) =>
+                prev.map((p) => (p.id === project.id ? { ...p, ...updates } : p))
+              );
+              addToast('Project updated successfully!', 'success');
+            } catch (err: any) {
+              addToast(`Failed to update project: ${err.message}`, 'info');
+            }
+          }}
           onAddToast={addToast}
         />
       </div>

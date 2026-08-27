@@ -15,6 +15,7 @@ import {
 import { Club } from '../types';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../hooks/useAuth';
 import { PageSkeleton } from '../components/Skeleton';
 import ClubDetail from '../components/ClubDetail';
 
@@ -67,6 +68,7 @@ const getClubLogo = (id: string, name: string) => {
 
 export default function ClubsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     clubs,
     setClubs,
@@ -120,8 +122,21 @@ export default function ClubsPage() {
       <div className="space-y-8 pb-12 font-sans text-slate-800">
         <ClubDetail
           club={clubs.find((c) => c.id === selectedClubId) || clubs[0]}
+          currentUser={user}
           onBack={() => setSelectedClubId(null)}
           onToggleJoin={toggleJoinClub}
+          onSaveClub={async (updates) => {
+            try {
+              const { error } = await supabase.from('clubs').update(updates).eq('id', selectedClubId);
+              if (error) throw error;
+              setClubs((prev: Club[]) =>
+                prev.map((c) => (c.id === selectedClubId ? { ...c, ...updates } : c))
+              );
+              addToast('Club updated successfully!', 'success');
+            } catch (err: any) {
+              addToast(`Failed to update club: ${err.message}`, 'info');
+            }
+          }}
           onAddToast={addToast}
         />
       </div>

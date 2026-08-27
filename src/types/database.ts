@@ -67,6 +67,7 @@ export interface Database {
           category: string;
           description: string;
           image: string;
+          logo: string;
           tag: string;
           tags: string[];
           equipment_access: string;
@@ -86,6 +87,7 @@ export interface Database {
           category?: string;
           description?: string;
           image?: string;
+          logo?: string;
           tag?: string;
           tags?: string[];
           equipment_access?: string;

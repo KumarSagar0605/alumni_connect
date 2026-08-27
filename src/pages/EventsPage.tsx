@@ -18,11 +18,13 @@ import {
 import { Event } from '../types';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../hooks/useAuth';
 import { PageSkeleton } from '../components/Skeleton';
 import EventDetail from '../components/EventDetail';
 
 export default function EventsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     clubs,
     events,
@@ -90,6 +92,7 @@ export default function EventsPage() {
         <EventDetail
           event={events.find((e) => e.id === selectedEventId) || events[0]}
           allEvents={events}
+          currentUser={user}
           onBack={() => setSelectedEventId(null)}
           onToggleRegister={toggleRegisterEvent}
           onSelectEvent={setSelectedEventId}
@@ -99,6 +102,27 @@ export default function EventsPage() {
               navigate('/clubs');
             } else {
               addToast(`Opened details for ${clubName}`, 'info');
+            }
+          }}
+          onSaveEvent={async (updates) => {
+            try {
+              const dbUpdates: any = { ...updates };
+              if (updates.date !== undefined) {
+                dbUpdates.event_date = updates.date;
+                delete dbUpdates.date;
+              }
+              if (updates.registeredCount !== undefined) {
+                dbUpdates.registered_count = updates.registeredCount;
+                delete dbUpdates.registeredCount;
+              }
+              const { error } = await supabase.from('events').update(dbUpdates).eq('id', selectedEventId);
+              if (error) throw error;
+              setEvents((prev: Event[]) =>
+                prev.map((e) => (e.id === selectedEventId ? { ...e, ...updates } : e))
+              );
+              addToast('Event updated successfully!', 'success');
+            } catch (err: any) {
+              addToast(`Failed to update event: ${err.message}`, 'info');
             }
           }}
           onAddToast={addToast}
