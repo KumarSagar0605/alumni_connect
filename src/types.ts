@@ -47,10 +47,19 @@ export interface Project {
   joined: boolean;
   badge: 'Recruiting' | 'Needs Mentor' | 'In Progress';
   members: string[];
+  mentorsList?: ProjectMentor[];
   milestones?: { name: string; done: boolean }[];
   techStack?: string[];
   lead?: string;
   created_by?: string | null;
+}
+
+export interface ProjectMentor {
+  id: string;
+  profileId: string;
+  fullName: string;
+  avatarUrl: string;
+  userId: string;
 }
 
 export interface Event {
@@ -123,4 +132,40 @@ export interface Message {
   timestamp: string;
   isMe: boolean;
   mentorId?: string;
+}
+
+export interface Conversation {
+  id: string;
+  studentId: string;
+  mentorProfileId: string;
+  mentorName: string;
+  mentorAvatar: string;
+  mentorUserId: string;
+  projectId: string;
+  projectName: string;
+  lastMessageText: string;
+  lastMessageAt: string;
+  createdAt: string;
+  unreadCount?: number;
+}
+
+export interface EligibleMentor {
+  mentorProfileId: string;
+  mentorName: string;
+  mentorAvatar: string;
+  mentorRole: string;
+  mentorUserId: string;
+  projectId: string;
+  projectName: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar: string;
+  text: string;
+  isMe: boolean;
+  createdAt: string;
+  isRead: boolean;
 }

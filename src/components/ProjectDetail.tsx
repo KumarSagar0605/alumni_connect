@@ -14,16 +14,19 @@ import {
   X,
   Check,
 } from 'lucide-react';
-import { Project } from '../types';
+import { Project, ProjectMentor } from '../types';
 
 interface ProjectDetailProps {
   project: Project;
   currentUser: any;
+  userRole?: string | null;
+  isMentor?: boolean;
   onBack: () => void;
   onToggleJoin: (id: string) => void;
   onToggleMentor: (id: string) => void;
   onNavigateToClub: (clubName: string) => void;
   onNavigateToMessages: () => void;
+  onMessageMentor: (mentorProfileId: string, projectId: string) => void;
   onSaveProject: (updates: Partial<Project>) => Promise<void>;
   onAddToast: (message: string, type?: 'success' | 'info') => void;
 }
@@ -47,11 +50,14 @@ const memberAvatars = [
 export default function ProjectDetail({
   project,
   currentUser,
+  userRole,
+  isMentor,
   onBack,
   onToggleJoin,
   onToggleMentor,
   onNavigateToClub,
   onNavigateToMessages,
+  onMessageMentor,
   onSaveProject,
   onAddToast,
 }: ProjectDetailProps) {
@@ -247,50 +253,119 @@ export default function ProjectDetail({
         </div>
 
         <div className="lg:col-span-4 space-y-6">
+          {/* Team Roster - Students */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Team Roster</h3>
-              <span className="text-[10px] font-bold text-slate-400">{project.members.length} members</span>
+              <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-slate-400" />
+                Students
+              </h3>
+              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full">{project.members.length}</span>
             </div>
-            <div className="flex -space-x-2">
-              {memberAvatars.slice(0, 4).map((av, i) => (
-                <img key={i} src={av} alt="member" className="w-9 h-9 rounded-full border-2 border-white object-cover" referrerPolicy="no-referrer" />
+            <div className="space-y-2">
+              {project.members.slice(0, 6).map((member, i) => (
+                <div key={i} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                  <img src={member} alt="member" className="w-7 h-7 rounded-full border border-slate-200 object-cover" referrerPolicy="no-referrer" />
+                  <span className="text-[11px] font-semibold text-slate-600 truncate">Student {i + 1}</span>
+                </div>
               ))}
-              {project.members.length > 4 && (
-                <div className="w-9 h-9 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">+{project.members.length - 4}</div>
+              {project.members.length > 6 && (
+                <p className="text-[10px] text-slate-400 font-bold text-center">+{project.members.length - 6} more</p>
               )}
             </div>
           </div>
 
-          {project.needsMentor && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          {/* Mentors List */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                 <GraduationCap className="w-4 h-4 text-[#9E2A2B]" />
-                <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Advisor Sync</h3>
+                Mentors
+              </h3>
+              <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-full border border-amber-100">
+                {(project.mentorsList || []).length}
+              </span>
+            </div>
+
+            {(project.mentorsList || []).length === 0 ? (
+              <div className="text-center py-3">
+                <p className="text-[11px] text-slate-400 font-medium">No mentors yet</p>
+                {userRole === 'alumni' && !isMentor && (
+                  <button
+                    onClick={() => onToggleMentor(project.id)}
+                    className="mt-2 text-[11px] text-[#9E2A2B] font-bold hover:underline cursor-pointer"
+                  >
+                    Be the first mentor
+                  </button>
+                )}
               </div>
-              {project.mentored ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <div>
-                      <p className="text-xs font-bold text-emerald-700">Advisor Connected</p>
-                      <p className="text-[10px] text-emerald-600 font-semibold">Dr. Elena Vance is aligned with your project</p>
+            ) : (
+              <div className="space-y-2">
+                {(project.mentorsList || []).map((mentor) => (
+                  <div key={mentor.id} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div className="relative shrink-0">
+                      <img
+                        src={mentor.avatarUrl}
+                        alt={mentor.fullName}
+                        className="w-8 h-8 rounded-full border border-slate-200 object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 rounded-full border border-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-bold text-slate-800 truncate">{mentor.fullName}</p>
+                      <p className="text-[9px] text-slate-400 font-semibold">Mentor</p>
+                    </div>
+                    {/* Students can message this mentor */}
+                    {userRole === 'student' && (
+                      <button
+                        onClick={() => onMessageMentor(mentor.profileId, project.id)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#FDF2F2] hover:bg-[#9E2A2B] text-[#9E2A2B] hover:text-white transition-all cursor-pointer shrink-0"
+                      >
+                        <MessageCircle className="w-3 h-3" />
+                        <span className="text-[10px] font-bold">Message</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Alumni: Join/Leave mentor button */}
+            {userRole === 'alumni' && (
+              <div className="pt-2 border-t border-slate-100">
+                {isMentor ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-100 rounded-xl">
+                      <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
+                      <p className="text-[10px] font-bold text-amber-700">You're mentoring this project</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onToggleMentor(project.id)}
+                        className="flex-1 py-2 rounded-xl border border-amber-200 bg-white hover:bg-amber-50 text-amber-700 text-[11px] font-bold transition-all cursor-pointer"
+                      >
+                        Leave
+                      </button>
+                      <button
+                        onClick={onNavigateToMessages}
+                        className="flex-1 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <MessageCircle className="w-3 h-3" /> Messages
+                      </button>
                     </div>
                   </div>
-                  <button onClick={onNavigateToMessages} className="w-full py-2.5 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5">
-                    <MessageCircle className="w-4 h-4" /> Message Advisor
+                ) : (
+                  <button
+                    onClick={() => onToggleMentor(project.id)}
+                    className="w-full py-2.5 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <GraduationCap className="w-3.5 h-3.5" /> Join as Mentor
                   </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-[11px] text-slate-500 font-medium">This project is looking for an experienced advisor. Offer your guidance or connect them with a mentor.</p>
-                  <button onClick={() => onToggleMentor(project.id)} className="w-full py-2.5 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5">
-                    <GraduationCap className="w-4 h-4" /> Offer Advice
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

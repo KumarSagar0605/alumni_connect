@@ -18,7 +18,9 @@ export default function Layout() {
     notifications, setNotifications,
   } = useApp();
 
-  const { userRole } = useAuth();
+  const { userRole, user } = useAuth();
+  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -144,9 +146,10 @@ export default function Layout() {
             <button
               onClick={() => handleNav('settings')}
               className="relative shrink-0 focus:outline-none select-none rounded-full border border-slate-200 hover:border-[#9E2A2B] transition-colors"
+              title={displayName}
             >
               <img
-                src="https://ui-avatars.com/api/?name=User&background=9E2A2B&color=fff&size=200"
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=9E2A2B&color=fff&size=200`}
                 alt="My Profile"
                 className="w-8 h-8 rounded-full object-cover"
                 referrerPolicy="no-referrer"

@@ -89,11 +89,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })));
 
         if (projectsRes.error) console.error('Projects fetch error:', projectsRes.error.message);
-        else if (projectsRes.data) setProjects(projectsRes.data.map((p: any) => ({
-          ...p,
-          clubName: p.club_name,
-          needsMentor: p.needs_mentor,
-        })));
+        else if (projectsRes.data) {
+          const formattedProjects = projectsRes.data.map((p: any) => ({
+            ...p,
+            clubName: p.club_name,
+            needsMentor: p.needs_mentor,
+            mentorsList: [],
+          }));
+
+          // Fetch project mentors with profile data
+          const { data: pmData } = await supabase
+            .from('project_mentors')
+            .select('id, project_id, mentor_id');
+
+          if (pmData && pmData.length > 0) {
+            const mentorIds = [...new Set(pmData.map((pm: any) => pm.mentor_id))];
+            const { data: mentorProfiles } = await supabase
+              .from('profiles')
+              .select('id, full_name, avatar_url, user_id')
+              .in('id', mentorIds);
+
+            const profileMap = new Map((mentorProfiles || []).map((p: any) => [p.id, p]));
+
+            for (const pm of pmData) {
+              const project = formattedProjects.find((p: any) => p.id === pm.project_id);
+              const profile = profileMap.get(pm.mentor_id);
+              if (project && profile) {
+                project.mentorsList.push({
+                  id: pm.id,
+                  profileId: profile.id,
+                  fullName: profile.full_name,
+                  avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.full_name)}&background=9E2A2B&color=fff&size=200`,
+                  userId: profile.user_id,
+                });
+              }
+            }
+          }
+
+          setProjects(formattedProjects);
+        }
 
         if (eventsRes.error) console.error('Events fetch error:', eventsRes.error.message);
         else if (eventsRes.data) setEvents(eventsRes.data.map((e: any) => ({

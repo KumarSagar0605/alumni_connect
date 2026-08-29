@@ -203,18 +203,54 @@ export interface Database {
           id: string;
           sender_id: string;
           receiver_id: string | null;
+          conversation_id: string | null;
           text: string;
           is_read: boolean;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
           sender_id: string;
           receiver_id?: string | null;
+          conversation_id?: string | null;
           text: string;
           is_read?: boolean;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
+      };
+      project_mentors: {
+        Row: {
+          id: string;
+          project_id: string;
+          mentor_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          mentor_id: string;
+        };
+        Update: Partial<Database['public']['Tables']['project_mentors']['Insert']>;
+      };
+      conversations: {
+        Row: {
+          id: string;
+          student_id: string;
+          mentor_profile_id: string;
+          project_id: string;
+          last_message_text: string;
+          last_message_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          student_id: string;
+          mentor_profile_id: string;
+          project_id: string;
+          last_message_text?: string;
+        };
+        Update: Partial<Database['public']['Tables']['conversations']['Insert']>;
       };
     };
   };
