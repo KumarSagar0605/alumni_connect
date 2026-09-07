@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'alumni' | 'admin';
+export type UserRole = 'student' | 'alumni' | 'admin' | 'head';
 
 export interface Database {
   public: {
@@ -114,6 +114,9 @@ export interface Database {
           progress: number;
           joined: boolean;
           members: string[];
+          milestones: { name: string; done: boolean }[];
+          tech_stack: string[];
+          lead: string;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -130,6 +133,9 @@ export interface Database {
           progress?: number;
           joined?: boolean;
           members?: string[];
+          milestones?: { name: string; done: boolean }[];
+          tech_stack?: string[];
+          lead?: string;
           created_by?: string | null;
         };
         Update: Partial<Database['public']['Tables']['projects']['Insert']>;

@@ -144,9 +144,9 @@ ${JSON.stringify(students.map(s => ({
   skills: s.skills,
   cgpa: s.cgpa,
   summary: s.summary,
-  project_tech: s.projects.flatMap(p => p.tech_stack),
-  project_descs: s.projects.map(p => p.description),
-  experience_descs: s.experience.map(e => e.description)
+  project_tech: (s.projects || []).flatMap(p => p.tech_stack || []),
+  project_descs: (s.projects || []).map(p => p.description || ''),
+  experience_descs: (s.experience || []).map(e => e.description || '')
 }))).slice(0, 30000)}
 
 Return ONLY a valid JSON array (no markdown, no code fences) with this schema:
@@ -172,23 +172,47 @@ SCORING RULES:
 - Sort by score descending (highest first).
 - Return ALL students, even those with score 0.`;
 
-  const response = await genai.models.generateContent({
-    model: 'gemini-3.6-flash',
-    contents: prompt,
-  });
+  const maxRetries = 3;
+  let retryCount = 0;
 
-  const text = response.text || '';
+  while (retryCount < maxRetries) {
+    try {
+      const response = await genai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: prompt,
+      });
+
+      const text = response.text || '';
+      
+      let cleaned = text.trim();
+      if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+      }
+
+      const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        throw new Error('AI could not rank candidates. Please try again.');
+      }
+
+      const rankings = JSON.parse(jsonMatch[0]) as RankedStudent[];
+      return rankings.sort((a, b) => b.score - a.score);
+    } catch (err: any) {
+      console.error('Gemini API error (attempt', retryCount + 1, '):', err.message);
+      
+      // Check for rate limit / availability errors
+      if (err.message?.includes('high demand') || err.message?.includes('503') || err.status === 'UNAVAILABLE') {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          const waitTime = Math.pow(2, retryCount) * 1000; // 2s, 4s
+          console.log(`Retrying in ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue;
+        }
+      }
+      
+      throw new Error(err.message || 'Failed to rank candidates. Please try again later.');
+    }
+  }
   
-  let cleaned = text.trim();
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-  }
-
-  const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    throw new Error('AI could not rank candidates. Please try again.');
-  }
-
-  const rankings = JSON.parse(jsonMatch[0]) as RankedStudent[];
-  return rankings.sort((a, b) => b.score - a.score);
+  throw new Error('Failed to rank candidates after multiple attempts. Please try again later.');
 }

@@ -47,6 +47,7 @@ export interface Project {
   joined: boolean;
   badge: 'Recruiting' | 'Needs Mentor' | 'In Progress';
   members: string[];
+  membersList?: ProjectMember[];
   mentorsList?: ProjectMentor[];
   milestones?: { name: string; done: boolean }[];
   techStack?: string[];
@@ -60,6 +61,12 @@ export interface ProjectMentor {
   fullName: string;
   avatarUrl: string;
   userId: string;
+}
+
+export interface ProjectMember {
+  profileId: string;
+  fullName: string;
+  avatarUrl: string;
 }
 
 export interface Event {
@@ -85,29 +92,6 @@ export interface Mentor {
   avatar_url: string;
   online: boolean;
   user_id?: string;
-}
-
-export interface Job {
-  id: string;
-  title: string;
-  department: string;
-  type: string;
-  compensation: string;
-  hours: string;
-  location: string;
-  description: string;
-  tag: string;
-  icon: string;
-}
-
-export interface Resource {
-  id: string;
-  title: string;
-  description: string;
-  action_label: string;
-  meta: string;
-  icon: string;
-  action_type: string;
 }
 
 export interface TrendingItem {

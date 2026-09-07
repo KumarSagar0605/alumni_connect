@@ -24,7 +24,7 @@ import EventDetail from '../components/EventDetail';
 
 export default function EventsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, canManage } = useAuth();
   const {
     clubs,
     events,
@@ -126,6 +126,18 @@ export default function EventsPage() {
             }
           }}
           onAddToast={addToast}
+          onDeleteEvent={async (eventId) => {
+            try {
+              const target = events.find((e) => e.id === eventId);
+              const { error } = await supabase.from('events').delete().eq('id', eventId);
+              if (error) throw error;
+              setEvents((prev: Event[]) => prev.filter((e) => e.id !== eventId));
+              setSelectedEventId(null);
+              addToast(`Deleted "${target?.name || 'event'}".`, 'info');
+            } catch (err: any) {
+              addToast(`Failed to delete event: ${err.message}`, 'info');
+            }
+          }}
         />
       </div>
     );
@@ -465,22 +477,24 @@ export default function EventsPage() {
         </div>
 
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-[#9E2A2B] text-white rounded-2xl p-5 shadow-sm space-y-4 relative overflow-hidden">
-            <div className="absolute right-0 bottom-0 w-24 h-24 bg-white/5 rounded-full translate-x-4 translate-y-4 pointer-events-none" />
-            <div className="space-y-1">
-              <h3 className="text-base font-black tracking-tight leading-snug">Host an Event?</h3>
-              <p className="text-xs text-rose-100 font-medium leading-relaxed">
-                Empower your community. Create and manage your event details right here.
-              </p>
+          {canManage && (
+            <div className="bg-[#9E2A2B] text-white rounded-2xl p-5 shadow-sm space-y-4 relative overflow-hidden">
+              <div className="absolute right-0 bottom-0 w-24 h-24 bg-white/5 rounded-full translate-x-4 translate-y-4 pointer-events-none" />
+              <div className="space-y-1">
+                <h3 className="text-base font-black tracking-tight leading-snug">Host an Event?</h3>
+                <p className="text-xs text-rose-100 font-medium leading-relaxed">
+                  Empower your community. Create and manage your event details right here.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateOpen(true)}
+                className="w-full py-2.5 bg-white hover:bg-slate-50 text-[#9E2A2B] font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4 stroke-[3px]" />
+                <span>Submit Event</span>
+              </button>
             </div>
-            <button
-              onClick={() => setIsCreateOpen(true)}
-              className="w-full py-2.5 bg-white hover:bg-slate-50 text-[#9E2A2B] font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-4 h-4 stroke-[3px]" />
-              <span>Submit Event</span>
-            </button>
-          </div>
+          )}
 
           <div className="bg-white border border-slate-150 p-5 rounded-2xl shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">

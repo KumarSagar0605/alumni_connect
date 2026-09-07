@@ -1,12 +1,14 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../supabaseClient';
+import { canManageRole } from '../utils/permissions';
 
-type UserRole = 'student' | 'alumni' | 'admin' | null;
+type UserRole = 'student' | 'alumni' | 'admin' | 'head' | null;
 
 interface AuthContextType {
   session: any;
   user: any;
   userRole: UserRole;
+  canManage: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -15,6 +17,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   user: null,
   userRole: null,
+  canManage: false,
   loading: true,
   signOut: async () => {},
 });
@@ -64,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       user: session?.user ?? null,
       userRole,
+      canManage: canManageRole(userRole),
       loading,
       signOut,
     }}>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { sanitizeSignupRole } from '../utils/permissions';
 import { Mail, Lock, User, Sparkles } from 'lucide-react';
 
 interface LoginProps {
@@ -14,7 +15,7 @@ export default function Login({ onLoginSuccess, onAddToast }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'student' | 'alumni' | 'admin'>('student');
+  const [role, setRole] = useState<'student' | 'alumni'>('student');
   const [loading, setLoading] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -23,11 +24,14 @@ export default function Login({ onLoginSuccess, onAddToast }: LoginProps) {
 
     try {
       if (isSignUp) {
+        // Public signup is restricted to student/alumni. Any tampered value
+        // (e.g. 'admin' or 'head' injected via devtools) falls back to 'student'.
+        const safeRole = sanitizeSignupRole(role);
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { full_name: fullName, role: role },
+            data: { full_name: fullName, role: safeRole },
           },
         });
         if (error) throw error;
@@ -77,10 +81,9 @@ export default function Login({ onLoginSuccess, onAddToast }: LoginProps) {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Account Role</label>
-                <select value={role} onChange={(e) => setRole(e.target.value as any)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#9E2A2B] cursor-pointer">
+                <select value={role} onChange={(e) => setRole(sanitizeSignupRole(e.target.value))} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#9E2A2B] cursor-pointer">
                   <option value="student">Student</option>
                   <option value="alumni">Alumni / Mentor</option>
-                  <option value="admin">Administrator (Demo)</option>
                 </select>
               </div>
             </>

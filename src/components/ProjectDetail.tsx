@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   ChevronRight,
@@ -11,10 +11,12 @@ import {
   Circle,
   Code,
   Pencil,
+  Trash2,
   X,
   Check,
 } from 'lucide-react';
 import { Project, ProjectMentor } from '../types';
+import { useAuth } from '../hooks/useAuth';
 
 interface ProjectDetailProps {
   project: Project;
@@ -28,7 +30,9 @@ interface ProjectDetailProps {
   onNavigateToMessages: () => void;
   onMessageMentor: (mentorProfileId: string, projectId: string) => void;
   onSaveProject: (updates: Partial<Project>) => Promise<void>;
+  onDeleteProject: (id: string) => Promise<void>;
   onAddToast: (message: string, type?: 'success' | 'info') => void;
+  userJoinedProjects?: Set<string> | undefined;
 }
 
 const defaultMilestones = [
@@ -59,8 +63,12 @@ export default function ProjectDetail({
   onNavigateToMessages,
   onMessageMentor,
   onSaveProject,
+  onDeleteProject,
   onAddToast,
+  userJoinedProjects,
 }: ProjectDetailProps) {
+  const { canManage } = useAuth();
+  const [isDeleting, setIsDeleting] = useState(false);
   const isCreator = currentUser && project.created_by && currentUser.id === project.created_by;
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(project.name);
@@ -73,11 +81,31 @@ export default function ProjectDetail({
     project.milestones && project.milestones.length > 0 ? project.milestones : defaultMilestones
   );
 
-  const toggleMilestone = (index: number) => {
-    setMilestones((prev) =>
-      prev.map((m, i) => (i === index ? { ...m, done: !m.done } : m))
+  // Re-sync local milestone/progress editors when navigating between projects
+  // (the component instance is reused across selections).
+  useEffect(() => {
+    setMilestones(
+      project.milestones && project.milestones.length > 0 ? project.milestones : defaultMilestones
     );
-    onAddToast('Milestone updated!', 'success');
+    setEditProgress(project.progress);
+    setEditName(project.name);
+    setEditDescription(project.description);
+    setEditBadge(project.badge);
+    setEditCategory(project.category);
+    setIsEditing(false);
+  }, [project.id]);
+
+  const toggleMilestone = async (index: number) => {
+    const next = milestones.map((m, i) => (i === index ? { ...m, done: !m.done } : m));
+    setMilestones(next);
+    // Milestone state lives in the projects row: persist for managers
+    // (RLS blocks students anyway); students get a local preview only.
+    // onSaveProject surfaces its own success/failure toasts.
+    if (canManage) {
+      await onSaveProject({ milestones: next } as any);
+    } else {
+      onAddToast('Milestone updated!', 'success');
+    }
   };
 
   const handleSave = async () => {
@@ -91,6 +119,16 @@ export default function ProjectDetail({
     setIsEditing(false);
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete "${project.name}"? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteProject(project.id);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleCancel = () => {
     setEditName(project.name);
     setEditDescription(project.description);
@@ -102,6 +140,13 @@ export default function ProjectDetail({
 
   const techStack = project.techStack && project.techStack.length > 0 ? project.techStack : defaultTechStack;
   const completedCount = milestones.filter((m) => m.done).length;
+
+  // Real roster from project_members + profiles; falls back to the legacy
+  // static avatar list for projects created before membership tracking.
+  const studentRoster =
+    project.membersList && project.membersList.length > 0
+      ? project.membersList.map((m) => ({ key: m.profileId, name: m.fullName, avatar: m.avatarUrl }))
+      : (project.members || []).map((avatar, i) => ({ key: `legacy-${i}`, name: `Student ${i + 1}`, avatar }));
 
   const inputCls = "w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#9E2A2B]/40 focus:ring-2 focus:ring-[#9E2A2B]/10 text-xs font-semibold text-slate-800 placeholder-slate-400";
   const textareaCls = "w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#9E2A2B]/40 focus:ring-2 focus:ring-[#9E2A2B]/10 text-xs font-semibold text-slate-800 placeholder-slate-400 resize-none";
@@ -123,7 +168,7 @@ export default function ProjectDetail({
             <span className="text-[#9E2A2B] font-bold">{project.name}</span>
           </div>
         </div>
-        {isCreator && (
+        {canManage && (
           <div className="flex items-center gap-2">
             {isEditing ? (
               <>
@@ -135,9 +180,14 @@ export default function ProjectDetail({
                 </button>
               </>
             ) : (
-              <button onClick={() => setIsEditing(true)} className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
-                <Pencil className="w-3.5 h-3.5" /> Edit Project
-              </button>
+              <>
+                <button onClick={() => setIsEditing(true)} className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
+                  <Pencil className="w-3.5 h-3.5" /> Edit Project
+                </button>
+                <button onClick={handleDelete} disabled={isDeleting} className="px-3 py-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50">
+                  <Trash2 className="w-3.5 h-3.5" /> {isDeleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </>
             )}
           </div>
         )}
@@ -191,8 +241,8 @@ export default function ProjectDetail({
                   {project.mentored ? '✓ Advisor Synced' : 'Offer Advice'}
                 </button>
               )}
-              <button onClick={() => onToggleJoin(project.id)} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${project.joined ? 'bg-white/10 border-white/20 text-white' : 'bg-white text-[#9E2A2B] border-transparent hover:bg-slate-50 shadow-xs'}`}>
-                {project.joined ? '✓ Joined' : 'Join Project'}
+              <button onClick={() => onToggleJoin(project.id)} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${userJoinedProjects?.has(project.id) ? 'bg-white/10 border-white/20 text-white' : 'bg-white text-[#9E2A2B] border-transparent hover:bg-slate-50 shadow-xs'}`}>
+                {userJoinedProjects?.has(project.id) ? '✓ Joined' : 'Join Project'}
               </button>
             </div>
           </div>
@@ -227,6 +277,11 @@ export default function ProjectDetail({
             ) : (
               <p className="text-xs text-slate-600 leading-relaxed font-medium">{project.description}</p>
             )}
+            {project.lead && (
+              <p className="text-[11px] font-bold text-slate-500">
+                Project lead: <span className="text-slate-800">{project.lead}</span>
+              </p>
+            )}
             <div className="flex flex-wrap gap-2 pt-2">
               {techStack.map((tech, i) => (
                 <span key={i} className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg">
@@ -260,17 +315,21 @@ export default function ProjectDetail({
                 <Users className="w-4 h-4 text-slate-400" />
                 Students
               </h3>
-              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full">{project.members.length}</span>
+              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full">{studentRoster.length}</span>
             </div>
             <div className="space-y-2">
-              {project.members.slice(0, 6).map((member, i) => (
-                <div key={i} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 transition-colors">
-                  <img src={member} alt="member" className="w-7 h-7 rounded-full border border-slate-200 object-cover" referrerPolicy="no-referrer" />
-                  <span className="text-[11px] font-semibold text-slate-600 truncate">Student {i + 1}</span>
-                </div>
-              ))}
-              {project.members.length > 6 && (
-                <p className="text-[10px] text-slate-400 font-bold text-center">+{project.members.length - 6} more</p>
+              {studentRoster.length === 0 ? (
+                <p className="text-[11px] text-slate-400 font-medium text-center py-2">No students have joined yet. Be the first!</p>
+              ) : (
+                studentRoster.slice(0, 6).map((member) => (
+                  <div key={member.key} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <img src={member.avatar} alt={member.name} className="w-7 h-7 rounded-full border border-slate-200 object-cover" referrerPolicy="no-referrer" />
+                    <span className="text-[11px] font-semibold text-slate-600 truncate">{member.name}</span>
+                  </div>
+                ))
+              )}
+              {studentRoster.length > 6 && (
+                <p className="text-[10px] text-slate-400 font-bold text-center">+{studentRoster.length - 6} more</p>
               )}
             </div>
           </div>

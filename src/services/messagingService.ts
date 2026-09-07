@@ -582,3 +582,72 @@ export async function getMyMentorProjects(userId: string): Promise<string[]> {
 
   return (data || []).map((pm) => pm.project_id);
 }
+
+// ============================================================
+// PROJECT MEMBERSHIP HELPERS
+// project_members.profile_id references profiles.id (NOT auth user id),
+// so every join/leave/lookup must resolve the caller's profile row first.
+// ============================================================
+
+/** Resolve the profiles.id row for an auth user id. Returns null if none. */
+export async function getProfileId(userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+
+  return data?.id ?? null;
+}
+
+/** Full profile row (id, name, avatar) for join/leave optimistic updates. */
+export async function getMemberProfile(userId: string): Promise<{
+  profileId: string;
+  fullName: string;
+  avatarUrl: string;
+} | null> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, full_name, avatar_url')
+    .eq('user_id', userId)
+    .single();
+
+  if (!data) return null;
+  return {
+    profileId: data.id,
+    fullName: data.full_name,
+    avatarUrl:
+      data.avatar_url ||
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(data.full_name)}&background=9E2A2B&color=fff&size=200`,
+  };
+}
+
+export interface ProjectMemberInfo {
+  profileId: string;
+  fullName: string;
+  avatarUrl: string;
+}
+
+/** Real member roster for a project, joined from profiles. */
+export async function getProjectMembers(projectId: string): Promise<ProjectMemberInfo[]> {
+  const { data: rows } = await supabase
+    .from('project_members')
+    .select('profile_id')
+    .eq('project_id', projectId);
+
+  if (!rows || rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((r: any) => r.profile_id))];
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, avatar_url')
+    .in('id', ids);
+
+  return (profiles || []).map((p: any) => ({
+    profileId: p.id,
+    fullName: p.full_name,
+    avatarUrl:
+      p.avatar_url ||
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=9E2A2B&color=fff&size=200`,
+  }));
+}

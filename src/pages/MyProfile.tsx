@@ -23,6 +23,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
+import RoleManager from '../components/RoleManager';
 
 interface ProfileData {
   id?: string;
@@ -193,6 +194,8 @@ export default function MyProfile() {
         .eq('user_id', user.id);
 
       if (error) throw error;
+
+      await supabase.auth.updateUser({ data: { full_name: updatedProfile.full_name } });
 
       setFullName(updatedProfile.full_name);
       setBio(updatedProfile.bio);
@@ -638,36 +641,6 @@ export default function MyProfile() {
             </div>
           )}
 
-          {hasResume && resumeProjects.length > 0 && (
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-8 shadow-xs space-y-4">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                <Award className="w-5 h-5 text-[#9E2A2B]" />
-                <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider">Resume Projects</h3>
-                <span className="px-2 py-0.5 bg-[#FDF2F2] text-[#9E2A2B] text-[9px] font-black rounded-full border border-rose-100">AI Extracted</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
-                {resumeProjects.map((proj, i) => (
-                  <div key={i} className="bg-white border border-slate-200/80 rounded-xl p-5 space-y-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center border bg-rose-50 border-rose-100 text-[#9E2A2B]">
-                      <Code className="w-4 h-4" />
-                    </div>
-                    <div className="space-y-1.5 pt-1.5">
-                      <h4 className="text-xs font-black text-slate-900">{proj.name}</h4>
-                      <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">{proj.description}</p>
-                    </div>
-                    {proj.tech_stack && proj.tech_stack.length > 0 && (
-                      <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-50">
-                        {proj.tech_stack.map((t: string, j: number) => (
-                          <span key={j} className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded text-[9px] font-bold text-slate-400">{t}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {hasResume && resumeCertifications.length > 0 && (
             <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-8 shadow-xs space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -787,6 +760,9 @@ export default function MyProfile() {
               )}
             </div>
           </div>
+
+          {/* Superadmin role management (renders only for role === 'admin') */}
+          <RoleManager />
         </div>
       </div>
 

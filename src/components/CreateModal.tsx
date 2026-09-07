@@ -158,10 +158,10 @@ export default function CreateModal({ isOpen, onClose, onSubmit, clubs }: Create
       clubName: projectForm.clubName || 'Atria Innovation Lab',
       progress: 0,
       mentored: false,
-      joined: true,
+      joined: false,
       techStack,
       milestones,
-      members: ['https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'],
+      members: [],
     });
     setProjectForm({ name: '', category: 'Technology', clubName: '', description: '', badge: 'Recruiting', needsMentor: false, techStack: '', lead: '', milestones: '' });
     onClose();

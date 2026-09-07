@@ -15,10 +15,12 @@ import {
   MessageCircle,
   Sparkles,
   Pencil,
+  Trash2,
   X,
   Check,
 } from 'lucide-react';
 import { Club } from '../types';
+import { useAuth } from '../hooks/useAuth';
 
 interface ClubDetailProps {
   club: Club;
@@ -26,10 +28,13 @@ interface ClubDetailProps {
   onBack: () => void;
   onToggleJoin: (id: string) => void;
   onSaveClub: (updates: Partial<Club>) => Promise<void>;
+  onDeleteClub: (id: string) => Promise<void>;
   onAddToast: (message: string, type?: 'success' | 'info') => void;
 }
 
-export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, onSaveClub, onAddToast }: ClubDetailProps) {
+export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, onSaveClub, onDeleteClub, onAddToast }: ClubDetailProps) {
+  const { canManage } = useAuth();
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [likesCount, setLikesCount] = useState<{ [key: number]: number }>({});
   const [hasLiked, setHasLiked] = useState<{ [key: number]: boolean }>({});
@@ -43,6 +48,16 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
   const handleSave = async () => {
     await onSaveClub({ name: editName, description: editDescription, category: editCategory });
     setIsEditing(false);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete "${club.name}"? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteClub(club.id);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleCancel = () => {
@@ -85,7 +100,7 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
   const equipmentAccess = club.equipmentAccess ?? 'Standard booking via student portal';
   const weeklyMeetings = club.weeklyMeetings ?? 'Tuesdays @ 5:00 PM';
   
-  const leadership = club.leadership ?? [
+  const leadership = (club.leadership && club.leadership.length > 0) ? club.leadership : [
     {
       name: 'Sarah Chen',
       role: 'President & Creative Director',
@@ -195,7 +210,7 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
 
             {/* Action buttons row */}
               <div className="flex items-center gap-2.5 shrink-0 self-end md:self-auto">
-              {isCreator && (
+              {canManage && (
                 isEditing ? (
                   <>
                     <button onClick={handleCancel} className="px-4 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
@@ -206,9 +221,14 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
-                    <Pencil className="w-3.5 h-3.5" /> Edit Club
-                  </button>
+                  <>
+                    <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
+                      <Pencil className="w-3.5 h-3.5" /> Edit Club
+                    </button>
+                    <button onClick={handleDelete} disabled={isDeleting} className="px-4 py-2 rounded-full border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50">
+                      <Trash2 className="w-3.5 h-3.5" /> {isDeleting ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </>
                 )
               )}
               <button

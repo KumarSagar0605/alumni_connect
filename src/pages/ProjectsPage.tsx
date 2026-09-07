@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, GraduationCap } from 'lucide-react';
 import { Project } from '../types';
@@ -8,11 +8,11 @@ import { useApp } from '../context/AppContext';
 import { useAuth } from '../hooks/useAuth';
 import { PageSkeleton } from '../components/Skeleton';
 import ProjectDetail from '../components/ProjectDetail';
-import { joinAsMentor, leaveMentorRole, getMyMentorProjects, getOrCreateConversation } from '../services/messagingService';
+import { joinAsMentor, leaveMentorRole, getMyMentorProjects, getOrCreateConversation, getProfileId, getMemberProfile } from '../services/messagingService';
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
-  const { user, userRole } = useAuth();
+  const { user, userRole, canManage } = useAuth();
   const {
     projects,
     setProjects,
@@ -22,12 +22,17 @@ export default function ProjectsPage() {
     addToast,
     setIsCreateOpen,
     dataLoading,
+    userJoinedProjects,
+    setUserJoinedProjects,
   } = useApp();
 
   const [projectFilter, setProjectFilter] = useState<'All' | 'Recruiting' | 'Needs Mentor' | 'Joined'>('All');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [myMentorProjects, setMyMentorProjects] = useState<string[]>([]);
   const [mentoringLoading, setMentoringLoading] = useState<Record<string, boolean>>({});
+  // In-flight join/leave guard: rapid double-clicks must not fire two
+  // inserts (the second one 409s on the unique constraint).
+  const joiningRef = useRef<Set<string>>(new Set());
 
   // Load mentor project IDs for alumni
   useEffect(() => {
@@ -44,32 +49,99 @@ export default function ProjectsPage() {
     let matchesFilter = true;
     if (projectFilter === 'Recruiting') matchesFilter = proj.badge === 'Recruiting';
     else if (projectFilter === 'Needs Mentor') matchesFilter = proj.badge === 'Needs Mentor';
-    else if (projectFilter === 'Joined') matchesFilter = proj.joined;
+    else if (projectFilter === 'Joined') matchesFilter = userJoinedProjects.has(proj.id);
 
     return matchesSearch && matchesFilter;
   });
 
   const toggleJoinProject = async (projectId: string) => {
     const target = projects.find((p) => p.id === projectId);
-    if (!target) return;
+    if (!target || !user?.id) return;
+    // Drop duplicate in-flight toggles for the same project (double-click).
+    if (joiningRef.current.has(projectId)) return;
+    joiningRef.current.add(projectId);
 
-    const newJoinedStatus = !target.joined;
+    const alreadyJoined = userJoinedProjects?.has(projectId) ?? false;
 
     try {
-      const { error } = await supabase
-        .from('projects')
-        .update({ joined: newJoinedStatus })
-        .eq('id', projectId);
+      // project_members.profile_id references profiles.id (not the auth uid)
+      const profileId = await getProfileId(user.id);
+      if (!profileId) {
+        addToast('Could not find your member profile. Please complete your profile first.', 'info');
+        return;
+      }
 
-      if (error) throw error;
+      if (alreadyJoined) {
+        // Leave the project
+        const { error } = await supabase
+          .from('project_members')
+          .delete()
+          .eq('project_id', projectId)
+          .eq('profile_id', profileId);
 
-      setProjects((prev: Project[]) =>
-        prev.map((p: Project) => (p.id === projectId ? { ...p, joined: newJoinedStatus } : p))
-      );
-      addToast(newJoinedStatus ? `You joined "${target.name}". Welcome to the project team!` : `You left "${target.name}".`, newJoinedStatus ? 'success' : 'info');
+        if (error) throw error;
+
+        setUserJoinedProjects((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(projectId);
+          return newSet;
+        });
+        setProjects((prev: Project[]) =>
+          prev.map((p: Project) => (p.id === projectId
+            ? { ...p, membersList: (p.membersList || []).filter((m) => m.profileId !== profileId) }
+            : p))
+        );
+      } else {
+        // Join the project
+        const { error } = await supabase
+          .from('project_members')
+          .insert({ project_id: projectId, profile_id: profileId });
+
+        if (error) {
+          // 23505 = unique violation: the membership row already exists
+          // (stale local state or a racing second click). Sync to joined
+          // instead of erroring.
+          if ((error as any)?.code === '23505') {
+            setUserJoinedProjects((prev) => new Set(prev).add(projectId));
+            const me = await getMemberProfile(user.id);
+            if (me) {
+              setProjects((prev: Project[]) =>
+                prev.map((p: Project) => {
+                  if (p.id !== projectId) return p;
+                  const list = p.membersList || [];
+                  return list.some((m) => m.profileId === me.profileId)
+                    ? p
+                    : { ...p, membersList: [...list, me] };
+                })
+              );
+            }
+            addToast(`You joined "${target.name}". Welcome to the project team!`, 'success');
+            return;
+          }
+          throw error;
+        }
+
+        setUserJoinedProjects((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(projectId);
+          return newSet;
+        });
+        const me = await getMemberProfile(user.id);
+        if (me) {
+          setProjects((prev: Project[]) =>
+            prev.map((p: Project) => (p.id === projectId
+              ? { ...p, membersList: [...(p.membersList || []), me] }
+              : p))
+          );
+        }
+      }
+
+      addToast(alreadyJoined ? `You left "${target.name}".` : `You joined "${target.name}". Welcome to the project team!`, alreadyJoined ? 'info' : 'success');
     } catch (err) {
-      console.error('Error joining project:', err);
-      addToast('Failed to join project via database', 'info');
+      console.error('Error toggling project join:', err);
+      addToast('Failed to toggle project join status', 'info');
+    } finally {
+      joiningRef.current.delete(projectId);
     }
   };
 
@@ -140,7 +212,14 @@ export default function ProjectsPage() {
           onMessageMentor={handleMessageMentor}
           onSaveProject={async (updates) => {
             try {
-              const { error } = await supabase.from('projects').update(updates).eq('id', project.id);
+              // Translate frontend camelCase fields to DB snake_case columns
+              // (milestones/lead share names; techStack -> tech_stack).
+              const dbUpdates: Record<string, any> = { ...updates };
+              if (updates.techStack !== undefined) {
+                dbUpdates.tech_stack = updates.techStack;
+                delete dbUpdates.techStack;
+              }
+              const { error } = await supabase.from('projects').update(dbUpdates).eq('id', project.id);
               if (error) throw error;
               setProjects((prev: Project[]) =>
                 prev.map((p) => (p.id === project.id ? { ...p, ...updates } : p))
@@ -151,6 +230,19 @@ export default function ProjectsPage() {
             }
           }}
           onAddToast={addToast}
+          userJoinedProjects={userJoinedProjects}
+          onDeleteProject={async (projectId) => {
+            try {
+              const target = projects.find((p) => p.id === projectId);
+              const { error } = await supabase.from('projects').delete().eq('id', projectId);
+              if (error) throw error;
+              setProjects((prev: Project[]) => prev.filter((p) => p.id !== projectId));
+              setSelectedProjectId(null);
+              addToast(`Deleted "${target?.name || 'project'}".`, 'info');
+            } catch (err: any) {
+              addToast(`Failed to delete project: ${err.message}`, 'info');
+            }
+          }}
         />
       </div>
     );
@@ -168,12 +260,14 @@ export default function ProjectsPage() {
             <h1 className="text-2xl font-extrabold text-slate-950 tracking-tight">Co-Lab Teams</h1>
             <p className="text-xs text-slate-500 font-medium">Join committed sprint groups or offer senior research advice.</p>
           </div>
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all self-start sm:self-auto cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Launch Project
-          </button>
+          {canManage && (
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all self-start sm:self-auto cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Launch Project
+            </button>
+          )}
         </div>
 
         <div className="space-y-4 bg-white rounded-2xl p-4 border border-slate-200/60 shadow-xs">
@@ -268,7 +362,10 @@ export default function ProjectsPage() {
                   <div className="flex items-center gap-3 self-start sm:self-auto">
                     <div className="flex items-center gap-2">
                       <div className="flex -space-x-1.5">
-                        {project.members.slice(0, 3).map((avatar, idx) => (
+                        {((project.membersList && project.membersList.length > 0
+                          ? project.membersList.map((m) => m.avatarUrl)
+                          : project.members
+                        ).slice(0, 3)).map((avatar, idx) => (
                           <img
                             key={idx}
                             src={avatar}
@@ -277,14 +374,20 @@ export default function ProjectsPage() {
                             referrerPolicy="no-referrer"
                           />
                         ))}
-                        {project.members.length > 3 && (
+                        {((project.membersList && project.membersList.length > 0
+                          ? project.membersList.length
+                          : project.members.length) > 3) && (
                           <div className="w-7 h-7 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[9px] font-bold text-slate-500">
-                            +{project.members.length - 3}
+                            +{(project.membersList && project.membersList.length > 0
+                              ? project.membersList.length
+                              : project.members.length) - 3}
                           </div>
                         )}
                       </div>
                       <span className="text-[10px] text-slate-400 font-bold tracking-wide">
-                        {project.members.length} students
+                        {project.membersList && project.membersList.length > 0
+                          ? project.membersList.length
+                          : project.members.length} students
                       </span>
                     </div>
                     {(project.mentorsList || []).length > 0 && (
@@ -334,12 +437,12 @@ export default function ProjectsPage() {
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleJoinProject(project.id); }}
                       className={`flex-1 sm:flex-initial px-5 py-2 text-xs font-bold transition-all border rounded-xl cursor-pointer ${
-                        project.joined
+                        userJoinedProjects?.has(project.id)
                           ? 'bg-slate-100 border-slate-200 text-slate-600 shadow-xs'
                           : 'bg-[#9E2A2B] border-transparent hover:bg-[#802223] text-white shadow-xs'
                       }`}
                     >
-                      {project.joined ? '✓ Joined Project' : 'Join Project'}
+                      {userJoinedProjects?.has(project.id) ? '✓ Joined Project' : 'Join Project'}
                     </button>
                   </div>
                 </div>

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../supabaseClient';
-import { Club, Project, Event, Mentor, Message, Job, Resource, TrendingItem, Notification } from '../types';
+import { Club, Project, Event, Mentor, Message, TrendingItem, Notification } from '../types';
 import { useAuth } from '../hooks/useAuth';
 
 export interface ToastItem {
@@ -20,10 +20,6 @@ interface AppContextType {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   mentors: Mentor[];
   setMentors: React.Dispatch<React.SetStateAction<Mentor[]>>;
-  jobs: Job[];
-  setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
-  resources: Resource[];
-  setResources: React.Dispatch<React.SetStateAction<Resource[]>>;
   trending: TrendingItem[];
   notifications: Notification[];
   setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
@@ -36,25 +32,26 @@ interface AppContextType {
   setIsCreateOpen: (open: boolean) => void;
   handleCreateSubmit: (type: 'club' | 'project' | 'event', data: any) => Promise<void>;
   dataLoading: boolean;
+  userJoinedProjects: Set<string>;
+  setUserJoinedProjects: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const [clubs, setClubs] = useState<Club[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [mentors, setMentors] = useState<Mentor[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [resources, setResources] = useState<Resource[]>([]);
   const [trending, setTrending] = useState<TrendingItem[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  const [userJoinedProjects, setUserJoinedProjects] = useState<Set<string>>(new Set());
 
   const addToast = (message: string, type: 'success' | 'info' = 'success') => {
     const id = `toast-${Date.now()}`;
@@ -66,16 +63,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  /**
+   * Authoritative client-side permission check for content management.
+   * Fast-path on the cached auth role, then re-validates against the live
+   * profiles row so a stale or tampered client state cannot bypass the gate.
+   * (Supabase RLS remains the true enforcement layer.)
+   */
+  const checkManagePermission = async (): Promise<boolean> => {
+    if (userRole === 'admin' || userRole === 'head') return true;
+    if (!user?.id) return false;
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      return data?.role === 'admin' || data?.role === 'head';
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [clubsRes, projectsRes, eventsRes, mentorsRes, jobsRes, resourcesRes, trendingRes] = await Promise.all([
+        const [clubsRes, projectsRes, eventsRes, mentorsRes, trendingRes] = await Promise.all([
           supabase.from('clubs').select('*'),
           supabase.from('projects').select('*'),
           supabase.from('events').select('*'),
           supabase.from('mentors').select('*'),
-          supabase.from('jobs').select('*'),
-          supabase.from('resources').select('*'),
           supabase.from('trending').select('*'),
         ]);
 
@@ -94,6 +110,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...p,
             clubName: p.club_name,
             needsMentor: p.needs_mentor,
+            techStack: p.tech_stack || [],
+            milestones: p.milestones || [],
+            lead: p.lead || '',
+            membersList: [],
             mentorsList: [],
           }));
 
@@ -127,6 +147,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
 
           setProjects(formattedProjects);
+
+        // Fetch project members (real roster) with profile data
+        const { data: memberRows } = await supabase
+          .from('project_members')
+          .select('project_id, profile_id');
+
+        if (memberRows && memberRows.length > 0) {
+          const memberProfileIds = [...new Set(memberRows.map((m: any) => m.profile_id))];
+          const { data: memberProfiles } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .in('id', memberProfileIds);
+
+          const memberMap = new Map((memberProfiles || []).map((p: any) => [p.id, p]));
+
+          for (const m of memberRows) {
+            const project = formattedProjects.find((p: any) => p.id === m.project_id);
+            const profile = memberMap.get(m.profile_id);
+            if (project && profile) {
+              project.membersList.push({
+                profileId: profile.id,
+                fullName: profile.full_name,
+                avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.full_name)}&background=9E2A2B&color=fff&size=200`,
+              });
+            }
+          }
+
+          setProjects([...formattedProjects]);
+        }
+
+        // Fetch project members to track which projects current user has joined.
+        // NOTE: project_members.profile_id references profiles.id, NOT the auth
+        // user id — resolve the caller's profile row first.
+        if (user?.id) {
+          const { data: myProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('user_id', user.id)
+            .single();
+
+          if (myProfile) {
+            const { data: membersData } = await supabase
+              .from('project_members')
+              .select('project_id')
+              .eq('profile_id', myProfile.id);
+
+            const joinedProjects = new Set();
+            if (membersData) {
+              membersData.forEach((pm: any) => joinedProjects.add(pm.project_id));
+            }
+            setUserJoinedProjects(joinedProjects);
+          }
+        }
         }
 
         if (eventsRes.error) console.error('Events fetch error:', eventsRes.error.message);
@@ -138,12 +211,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (mentorsRes.error) console.error('Mentors fetch error:', mentorsRes.error.message);
         else if (mentorsRes.data) setMentors(mentorsRes.data);
-
-        if (jobsRes.error) console.error('Jobs fetch error:', jobsRes.error.message);
-        else if (jobsRes.data) setJobs(jobsRes.data);
-
-        if (resourcesRes.error) console.error('Resources fetch error:', resourcesRes.error.message);
-        else if (resourcesRes.data) setResources(resourcesRes.data);
 
         if (trendingRes.error) console.error('Trending fetch error:', trendingRes.error.message);
         else if (trendingRes.data) setTrending(trendingRes.data);
@@ -157,7 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           else if (notifData) setNotifications(notifData);
         }
 
-        const hasErrors = clubsRes.error || projectsRes.error || eventsRes.error || mentorsRes.error || jobsRes.error || resourcesRes.error || trendingRes.error;
+        const hasErrors = clubsRes.error || projectsRes.error || eventsRes.error || mentorsRes.error || trendingRes.error;
         if (hasErrors) {
           addToast('Some data could not be loaded from the server.', 'info');
         }
@@ -172,6 +239,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const handleCreateSubmit = async (type: 'club' | 'project' | 'event', data: any) => {
+    // Client-side enforcement: only admin/head may create clubs, projects, events.
+    // Row Level Security on the tables is the authoritative enforcement; this
+    // guard fails fast with a clear message instead of a raw DB error.
+    if (type === 'club' || type === 'project' || type === 'event') {
+      const permitted = await checkManagePermission();
+      if (!permitted) {
+        addToast('Only admins and appointed heads can create communities content.', 'info');
+        return;
+      }
+    }
+
     try {
       if (type === 'club') {
         const { data: newClub, error } = await supabase
@@ -221,6 +299,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             mentored: data.mentored,
             joined: data.joined,
             members: data.members,
+            milestones: data.milestones || [],
+            tech_stack: data.techStack || [],
+            lead: data.lead || '',
           }])
           .select()
           .single();
@@ -233,7 +314,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const formattedProject = {
           ...newProject,
           clubName: newProject.club_name,
-          needsMentor: newProject.needs_mentor
+          needsMentor: newProject.needs_mentor,
+          techStack: newProject.tech_stack || [],
+          milestones: newProject.milestones || [],
+          lead: newProject.lead || '',
+          membersList: [],
         };
         setProjects((prev) => [formattedProject, ...prev]);
         addToast(`Successfully started new project: "${data.name}"!`, 'success');
@@ -282,15 +367,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       events, setEvents,
       messages, setMessages,
       mentors, setMentors,
-      jobs, setJobs,
-      resources, setResources,
       trending,
       notifications, setNotifications,
       searchQuery, setSearchQuery,
       toasts, addToast, removeToast,
       isCreateOpen, setIsCreateOpen,
       handleCreateSubmit,
-      dataLoading
+      dataLoading,
+      userJoinedProjects, setUserJoinedProjects
     }}>
       {children}
     </AppContext.Provider>

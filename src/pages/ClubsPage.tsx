@@ -68,7 +68,7 @@ const getClubLogo = (id: string, name: string) => {
 
 export default function ClubsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, canManage } = useAuth();
   const {
     clubs,
     setClubs,
@@ -138,6 +138,18 @@ export default function ClubsPage() {
             }
           }}
           onAddToast={addToast}
+          onDeleteClub={async (clubId) => {
+            try {
+              const target = clubs.find((c) => c.id === clubId);
+              const { error } = await supabase.from('clubs').delete().eq('id', clubId);
+              if (error) throw error;
+              setClubs((prev: Club[]) => prev.filter((c) => c.id !== clubId));
+              setSelectedClubId(null);
+              addToast(`Deleted "${target?.name || 'club'}".`, 'info');
+            } catch (err: any) {
+              addToast(`Failed to delete club: ${err.message}`, 'info');
+            }
+          }}
         />
       </div>
     );
@@ -204,13 +216,15 @@ export default function ClubsPage() {
           <div className="py-12 text-center bg-white rounded-2xl border border-slate-100 p-8 space-y-3">
             <Users className="w-12 h-12 text-slate-300 mx-auto" />
             <h3 className="text-sm font-extrabold text-slate-800">No clubs in this category yet</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">Be the first to launch a creative cluster or academic group in this vertical!</p>
-            <button
-              onClick={() => setIsCreateOpen(true)}
-              className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-all cursor-pointer mt-2"
-            >
-              <Plus className="w-4 h-4" /> Start Cluster
-            </button>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">Be the first to launch a creative cluster or academic group in this vertical!</p>
+              {canManage && (
+                <button
+                  onClick={() => setIsCreateOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-all cursor-pointer mt-2"
+                >
+                  <Plus className="w-4 h-4" /> Start Cluster
+                </button>
+              )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

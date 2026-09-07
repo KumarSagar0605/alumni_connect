@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -13,10 +13,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Club, Project, Event } from '../types';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../hooks/useAuth';
+import { getProfileId, getMemberProfile } from '../services/messagingService';
 import { PageSkeleton } from '../components/Skeleton';
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     clubs,
     setClubs,
@@ -29,9 +32,14 @@ export default function HomePage() {
     setSearchQuery,
     addToast,
     dataLoading,
+    userJoinedProjects,
+    setUserJoinedProjects,
   } = useApp();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  // In-flight join/leave guard: rapid double-clicks must not fire two
+  // inserts (the second one 409s on the unique constraint).
+  const joiningRef = useRef<Set<string>>(new Set());
   const categories = ['All', 'Academic', 'Arts', 'Sports', 'Tech', 'Wellness', 'Business', 'Photography', 'Gaming'];
 
   const filteredClubs = clubs.filter((club) => {
@@ -85,25 +93,89 @@ export default function HomePage() {
 
   const toggleJoinProject = async (projectId: string) => {
     const target = projects.find((p) => p.id === projectId);
-    if (!target) return;
+    if (!target || !user?.id) return;
+    // Drop duplicate in-flight toggles for the same project (double-click).
+    if (joiningRef.current.has(projectId)) return;
+    joiningRef.current.add(projectId);
 
-    const newJoinedStatus = !target.joined;
+    const alreadyJoined = userJoinedProjects?.has(projectId) ?? false;
 
     try {
-      const { error } = await supabase
-        .from('projects')
-        .update({ joined: newJoinedStatus })
-        .eq('id', projectId);
+      // project_members.profile_id references profiles.id (not the auth uid)
+      const profileId = await getProfileId(user.id);
+      if (!profileId) {
+        addToast('Could not find your member profile. Please complete your profile first.', 'info');
+        return;
+      }
 
-      if (error) throw error;
+      if (alreadyJoined) {
+        const { error } = await supabase
+          .from('project_members')
+          .delete()
+          .eq('project_id', projectId)
+          .eq('profile_id', profileId);
 
-      setProjects((prev: Project[]) =>
-        prev.map((p: Project) => (p.id === projectId ? { ...p, joined: newJoinedStatus } : p))
-      );
-      addToast(newJoinedStatus ? `You joined "${target.name}". Welcome to the project team!` : `You left "${target.name}".`, newJoinedStatus ? 'success' : 'info');
+        if (error) throw error;
+
+        setUserJoinedProjects((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(projectId);
+          return newSet;
+        });
+        setProjects((prev: Project[]) =>
+          prev.map((p: Project) => (p.id === projectId
+            ? { ...p, membersList: (p.membersList || []).filter((m) => m.profileId !== profileId) }
+            : p))
+        );
+      } else {
+        const { error } = await supabase
+          .from('project_members')
+          .insert({ project_id: projectId, profile_id: profileId });
+
+        if (error) {
+          // 23505 = unique violation: the membership row already exists
+          // (stale local state or a racing second click). Sync to joined
+          // instead of erroring.
+          if ((error as any)?.code === '23505') {
+            setUserJoinedProjects((prev) => new Set(prev).add(projectId));
+            const me = await getMemberProfile(user.id);
+            if (me) {
+              setProjects((prev: Project[]) =>
+                prev.map((p: Project) => {
+                  if (p.id !== projectId) return p;
+                  const list = p.membersList || [];
+                  return list.some((m) => m.profileId === me.profileId)
+                    ? p
+                    : { ...p, membersList: [...list, me] };
+                })
+              );
+            }
+            addToast(`You joined "${target.name}". Welcome to the project team!`, 'success');
+            return;
+          }
+          throw error;
+        }
+
+        setUserJoinedProjects((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(projectId);
+          return newSet;
+        });
+        const me = await getMemberProfile(user.id);
+        if (me) {
+          setProjects((prev: Project[]) =>
+            prev.map((p: Project) => (p.id === projectId
+              ? { ...p, membersList: [...(p.membersList || []), me] }
+              : p))
+          );
+        }
+      }
+      addToast(alreadyJoined ? `You left "${target.name}".` : `You joined "${target.name}". Welcome to the project team!`, alreadyJoined ? 'info' : 'success');
     } catch (err) {
       console.error('Error joining project:', err);
       addToast('Failed to join project via database', 'info');
+    } finally {
+      joiningRef.current.delete(projectId);
     }
   };
 
@@ -388,22 +460,27 @@ export default function HomePage() {
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-1">
-                      <div className="flex items-center gap-2 self-start sm:self-auto">
-                        <div className="flex -space-x-1.5">
-                          {project.members.map((avatar, idx) => (
-                            <img
-                              key={idx}
-                              src={avatar}
-                              alt="member"
-                              className="w-7 h-7 rounded-full border-2 border-white object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                          ))}
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                          <div className="flex -space-x-1.5">
+                            {((project.membersList && project.membersList.length > 0
+                              ? project.membersList.map((m) => m.avatarUrl)
+                              : project.members
+                            )).map((avatar, idx) => (
+                              <img
+                                key={idx}
+                                src={avatar}
+                                alt="member"
+                                className="w-7 h-7 rounded-full border-2 border-white object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-bold tracking-wide">
+                            {project.membersList && project.membersList.length > 0
+                              ? project.membersList.length
+                              : project.members.length} members synced
+                          </span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-bold tracking-wide">
-                          {project.members.length} members synced
-                        </span>
-                      </div>
 
                       <div className="flex items-center gap-2 w-full sm:w-auto">
                         {project.needsMentor && (
@@ -421,12 +498,12 @@ export default function HomePage() {
                         <button
                           onClick={() => toggleJoinProject(project.id)}
                           className={`flex-1 sm:flex-initial px-5 py-2 text-xs font-bold transition-all border rounded-xl cursor-pointer ${
-                            project.joined
+                            userJoinedProjects?.has(project.id)
                               ? 'bg-slate-100 border-slate-200 text-slate-600 shadow-xs'
                               : 'bg-[#9E2A2B] border-transparent hover:bg-[#802223] text-white shadow-xs'
                           }`}
                         >
-                          {project.joined ? '✓ Joined Project' : 'Join Project'}
+                          {userJoinedProjects?.has(project.id) ? '✓ Joined Project' : 'Join Project'}
                         </button>
                       </div>
                     </div>

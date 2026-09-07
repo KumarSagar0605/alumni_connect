@@ -15,10 +15,12 @@ import {
   ExternalLink,
   Star,
   Pencil,
+  Trash2,
   X,
   Check,
 } from 'lucide-react';
 import { Event } from '../types';
+import { useAuth } from '../hooks/useAuth';
 
 interface EventDetailProps {
   event: Event;
@@ -29,6 +31,7 @@ interface EventDetailProps {
   onSelectEvent: (id: string) => void;
   onNavigateToClub: (clubName: string) => void;
   onSaveEvent: (updates: Partial<Event>) => Promise<void>;
+  onDeleteEvent: (id: string) => Promise<void>;
   onAddToast: (message: string, type?: 'success' | 'info') => void;
 }
 
@@ -41,9 +44,12 @@ export default function EventDetail({
   onSelectEvent,
   onNavigateToClub,
   onSaveEvent,
+  onDeleteEvent,
   onAddToast
 }: EventDetailProps) {
+  const { canManage } = useAuth();
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const isCreator = currentUser && event.created_by && currentUser.id === event.created_by;
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(event.name);
@@ -55,6 +61,16 @@ export default function EventDetail({
   const handleSave = async () => {
     await onSaveEvent({ name: editName, description: editDescription, date: editDate, category: editCategory, location: editLocation });
     setIsEditing(false);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete "${event.name}"? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteEvent(event.id);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleCancel = () => {
@@ -213,7 +229,7 @@ export default function EventDetail({
             <ArrowLeft className="w-4 h-4" />
             <span>Back to Events</span>
           </button>
-          {isCreator && (
+          {canManage && (
             <div className="flex items-center gap-2">
               {isEditing ? (
                 <>
@@ -225,9 +241,14 @@ export default function EventDetail({
                   </button>
                 </>
               ) : (
-                <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 cursor-pointer flex items-center gap-1">
-                  <Pencil className="w-3.5 h-3.5" /> Edit Event
-                </button>
+                <>
+                  <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 cursor-pointer flex items-center gap-1">
+                    <Pencil className="w-3.5 h-3.5" /> Edit Event
+                  </button>
+                  <button onClick={handleDelete} disabled={isDeleting} className="px-4 py-2 rounded-full bg-white/10 hover:bg-red-500/80 text-white text-xs font-bold border border-white/20 cursor-pointer flex items-center gap-1 disabled:opacity-50">
+                    <Trash2 className="w-3.5 h-3.5" /> {isDeleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </>
               )}
             </div>
           )}

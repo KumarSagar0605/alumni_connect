@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, Plus, Search, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,6 +8,7 @@ import CreateModal from './CreateModal';
 import Toast from './Toast';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../supabaseClient';
 
 export default function Layout() {
   const {
@@ -18,9 +19,55 @@ export default function Layout() {
     notifications, setNotifications,
   } = useApp();
 
-  const { userRole, user } = useAuth();
+  const { userRole, user, canManage } = useAuth();
   const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Fetch unread message count
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const fetchUnread = async () => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!profile) return;
+
+      let convQuery;
+      if (profile.role === 'student') {
+        convQuery = supabase.from('conversations').select('id').eq('student_id', profile.id);
+      } else if (profile.role === 'alumni') {
+        convQuery = supabase.from('conversations').select('id').eq('mentor_profile_id', profile.id);
+      } else {
+        return;
+      }
+
+      const { data: convs } = await convQuery;
+      if (!convs || convs.length === 0) return;
+
+      const convIds = convs.map((c) => c.id);
+
+      const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .in('conversation_id', convIds)
+        .neq('sender_id', profile.id)
+        .eq('is_read', false);
+
+      setUnreadCount(count || 0);
+    };
+
+    fetchUnread();
+
+    // Poll every 10 seconds
+    const interval = setInterval(fetchUnread, 10000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -135,16 +182,18 @@ export default function Layout() {
               </AnimatePresence>
             </div>
 
-            <button
-              onClick={() => setIsCreateOpen(true)}
-              className="px-4 py-2 rounded-lg bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-98 transition-all focus:outline-none shrink-0 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create</span>
-            </button>
+            {canManage && (
+              <button
+                onClick={() => setIsCreateOpen(true)}
+                className="px-4 py-2 rounded-lg bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-98 transition-all focus:outline-none shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create</span>
+              </button>
+            )}
 
             <button
-              onClick={() => handleNav('settings')}
+              onClick={() => navigate('/profile')}
               className="relative shrink-0 focus:outline-none select-none rounded-full border border-slate-200 hover:border-[#9E2A2B] transition-colors"
               title={displayName}
             >
@@ -183,7 +232,7 @@ export default function Layout() {
                 className="fixed top-0 bottom-0 left-0 w-64 bg-white z-50 md:hidden shadow-xl flex flex-col pt-16 px-4 border-r border-slate-200"
               >
                 <div className="space-y-1.5 flex-1 pt-4 overflow-y-auto">
-                  <Sidebar activeView={activeView} onNavigate={handleNav} userRole={userRole} />
+          <Sidebar activeView={activeView} onNavigate={handleNav} userRole={userRole} unreadCount={unreadCount} />
                 </div>
               </motion.div>
             </>

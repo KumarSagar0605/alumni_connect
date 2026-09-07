@@ -13,15 +13,11 @@ import ClubsPage from './pages/ClubsPage';
 import ProjectsPage from './pages/ProjectsPage';
 import MentorsPage from './pages/MentorsPage';
 import EventsPage from './pages/EventsPage';
-import JobsPage from './pages/JobsPage';
 import OpportunitiesPage from './pages/Opportunities';
-import ResourcesPage from './pages/ResourcesPage';
 import MessagesPage from './pages/MessagesPage';
 import MyProfile from './pages/MyProfile';
-import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ResumeAnalyzerPage from './pages/ResumeAnalyzerPage';
-import JDAnalyzerPage from './pages/JDAnalyzerPage';
 
 function AppLoader() {
   return (
@@ -61,30 +57,18 @@ function AuthenticatedRoutes() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/mentors" element={<MentorsPage />} />
           <Route path="/events" element={<EventsPage />} />
-          <Route path="/jobs" element={
-            <ProtectedRoute allowedRoles={['student', 'alumni', 'admin']}>
-              <JobsPage />
-            </ProtectedRoute>
-          } />
           <Route path="/opportunities" element={
-            <ProtectedRoute allowedRoles={['alumni', 'admin']}>
+            <ProtectedRoute allowedRoles={['alumni', 'admin', 'head']}>
               <OpportunitiesPage />
             </ProtectedRoute>
           } />
-          <Route path="/resources" element={<ResourcesPage />} />
           <Route path="/messages" element={<MessagesPage />} />
           <Route path="/resume" element={
             <ProtectedRoute allowedRoles={['student']}>
               <ResumeAnalyzerPage />
             </ProtectedRoute>
           } />
-          <Route path="/jd-ranker" element={
-            <ProtectedRoute allowedRoles={['alumni', 'admin']}>
-              <JDAnalyzerPage />
-            </ProtectedRoute>
-          } />
           <Route path="/profile" element={<MyProfile />} />
-          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
