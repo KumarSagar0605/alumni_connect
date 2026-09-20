@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { Project, ProjectMentor } from '../types';
 import { useAuth } from '../hooks/useAuth';
+import { useApp } from '../context/AppContext';
+import MemberManager from './MemberManager';
 
 interface ProjectDetailProps {
   project: Project;
@@ -69,6 +71,8 @@ export default function ProjectDetail({
 }: ProjectDetailProps) {
   const { canManage } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showMemberManager, setShowMemberManager] = useState(false);
+  const { addProjectLead, removeProjectLead } = useApp();
   const isCreator = currentUser && project.created_by && currentUser.id === project.created_by;
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(project.name);
@@ -181,6 +185,9 @@ export default function ProjectDetail({
               </>
             ) : (
               <>
+                <button onClick={() => setShowMemberManager(true)} className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5" /> Manage Leads
+                </button>
                 <button onClick={() => setIsEditing(true)} className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
                   <Pencil className="w-3.5 h-3.5" /> Edit Project
                 </button>
@@ -427,6 +434,22 @@ export default function ProjectDetail({
           </div>
         </div>
       </div>
+
+      <MemberManager
+        isOpen={showMemberManager}
+        onClose={() => setShowMemberManager(false)}
+        entityName={project.name}
+        entityType="project"
+        entityId={project.id}
+        members={(project.membersList || []).map((m) => ({
+          id: m.id || m.profileId,
+          profileId: m.profileId,
+          role: m.role || 'member',
+          profile: { id: m.profileId, fullName: m.fullName, avatarUrl: m.avatarUrl, role: 'student' },
+        }))}
+        onAddLead={addProjectLead}
+        onRemoveLead={removeProjectLead}
+      />
     </div>
   );
 }

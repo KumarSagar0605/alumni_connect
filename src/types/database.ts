@@ -258,6 +258,66 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['conversations']['Insert']>;
       };
+      communities: {
+        Row: {
+          id: string;
+          name: string;
+          description: string;
+          image: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          description?: string;
+          image?: string;
+          created_by?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['communities']['Insert']>;
+      };
+      community_members: {
+        Row: {
+          id: string;
+          community_id: string;
+          profile_id: string;
+          role: 'lead' | 'member';
+          joined_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id: string;
+          profile_id: string;
+          role?: 'lead' | 'member';
+        };
+        Update: Partial<Database['public']['Tables']['community_members']['Insert']>;
+      };
+      community_posts: {
+        Row: {
+          id: string;
+          community_id: string;
+          author_id: string | null;
+          title: string;
+          content: string;
+          post_type: 'event' | 'announcement' | 'update';
+          image: string;
+          event_date: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id: string;
+          author_id?: string | null;
+          title: string;
+          content?: string;
+          post_type?: 'event' | 'announcement' | 'update';
+          image?: string;
+          event_date?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['community_posts']['Insert']>;
+      };
     };
   };
 }

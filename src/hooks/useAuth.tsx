@@ -57,9 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    const userId = session?.user?.id;
     await supabase.auth.signOut();
     setSession(null);
     setUserRole(null);
+    if (userId) sessionStorage.removeItem(`cia_opportunities_${userId}`);
   };
 
   return (

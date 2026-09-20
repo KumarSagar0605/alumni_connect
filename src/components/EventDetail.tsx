@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { Event } from '../types';
 import { useAuth } from '../hooks/useAuth';
+import { useApp } from '../context/AppContext';
+import MemberManager from './MemberManager';
 
 interface EventDetailProps {
   event: Event;
@@ -50,6 +52,8 @@ export default function EventDetail({
   const { canManage } = useAuth();
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showMemberManager, setShowMemberManager] = useState(false);
+  const { eventHosts, addEventLead, removeEventLead } = useApp();
   const isCreator = currentUser && event.created_by && currentUser.id === event.created_by;
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(event.name);
@@ -242,6 +246,9 @@ export default function EventDetail({
                 </>
               ) : (
                 <>
+                  <button onClick={() => setShowMemberManager(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 cursor-pointer flex items-center gap-1">
+                    <Users className="w-3.5 h-3.5" /> Manage Hosts
+                  </button>
                   <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 cursor-pointer flex items-center gap-1">
                     <Pencil className="w-3.5 h-3.5" /> Edit Event
                   </button>
@@ -573,6 +580,16 @@ export default function EventDetail({
 
       </div>
 
+      <MemberManager
+        isOpen={showMemberManager}
+        onClose={() => setShowMemberManager(false)}
+        entityName={event.name}
+        entityType="event"
+        entityId={event.id}
+        members={eventHosts[event.id] || []}
+        onAddLead={addEventLead}
+        onRemoveLead={removeEventLead}
+      />
     </div>
   );
 }

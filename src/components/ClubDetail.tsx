@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { Club } from '../types';
 import { useAuth } from '../hooks/useAuth';
+import { useApp } from '../context/AppContext';
+import MemberManager from './MemberManager';
 
 interface ClubDetailProps {
   club: Club;
@@ -44,6 +46,8 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
   const [editName, setEditName] = useState(club.name);
   const [editDescription, setEditDescription] = useState(club.description);
   const [editCategory, setEditCategory] = useState(club.category);
+  const [showMemberManager, setShowMemberManager] = useState(false);
+  const { clubMembers, addClubLead, removeClubLead } = useApp();
 
   const handleSave = async () => {
     await onSaveClub({ name: editName, description: editDescription, category: editCategory });
@@ -209,7 +213,7 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
             </div>
 
             {/* Action buttons row */}
-              <div className="flex items-center gap-2.5 shrink-0 self-end md:self-auto">
+            <div className="flex items-center gap-2.5 shrink-0 self-end md:self-auto">
               {canManage && (
                 isEditing ? (
                   <>
@@ -222,6 +226,9 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
                   </>
                 ) : (
                   <>
+                    <button onClick={() => setShowMemberManager(true)} className="px-4 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5" /> Manage Leads
+                    </button>
                     <button onClick={() => setIsEditing(true)} className="px-4 py-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1">
                       <Pencil className="w-3.5 h-3.5" /> Edit Club
                     </button>
@@ -603,6 +610,17 @@ export default function ClubDetail({ club, currentUser, onBack, onToggleJoin, on
 
         </div>
       </div>
+
+      <MemberManager
+        isOpen={showMemberManager}
+        onClose={() => setShowMemberManager(false)}
+        entityName={club.name}
+        entityType="club"
+        entityId={club.id}
+        members={clubMembers[club.id] || []}
+        onAddLead={addClubLead}
+        onRemoveLead={removeClubLead}
+      />
     </div>
   );
 }

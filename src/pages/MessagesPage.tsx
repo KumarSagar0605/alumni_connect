@@ -1,23 +1,28 @@
 // @ts-nocheck
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Search, Circle, Clock, ArrowLeft, UserPlus, MessageSquare } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Send, Search, Circle, Clock, ArrowLeft, UserPlus, MessageSquare, ClipboardCheck } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
+import { getMyAssessments } from '../services/assessmentService';
+import InviteStudentModal from '../components/InviteStudentModal';
 import type { EligibleMentor, Conversation, ChatMessage } from '../types';
 import {
   getEligibleMentors,
   getOrCreateConversation,
+  getOrCreateDirectConversation,
   getUserConversations,
   getConversationMessages,
   sendMessage as sendMsg,
   markConversationRead,
   subscribeToMessages,
-  subscribeToConversations,
 } from '../services/messagingService';
+import { supabase } from '../supabaseClient';
 
 export default function MessagesPage() {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const { addToast } = useApp();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // State
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -30,6 +35,10 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [activeTab, setActiveTab] = useState<'chats' | 'new'>('chats');
+
+  // Assessment state
+  const [myAssessments, setMyAssessments] = useState([]);
+  const [inviteModal, setInviteModal] = useState({ open: false, studentUserId: '', studentName: '', conversationId: '' });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
@@ -63,14 +72,76 @@ export default function MessagesPage() {
     init();
   }, [loadConversations, loadEligibleMentors]);
 
-  // Subscribe to conversation list changes
+  // Load assessments for alumni
+  useEffect(() => {
+    if (!user?.id || userRole === 'student') return;
+    getMyAssessments(user.id).then(setMyAssessments);
+  }, [user?.id, userRole]);
+
+  // Handle ?user_id=XXX query param — open/create direct conversation
+  useEffect(() => {
+    const targetUserId = searchParams.get('user_id');
+    if (!targetUserId || !user?.id || loading) return;
+
+    const openDirectChat = async () => {
+      const conv = await getOrCreateDirectConversation(user.id, targetUserId);
+      if (conv) {
+        // Enrich with recipient info
+        const { data: recipientProfile } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, user_id')
+          .eq('user_id', targetUserId)
+          .single();
+        if (recipientProfile) {
+          conv.mentorName = recipientProfile.full_name;
+          conv.mentorAvatar = recipientProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(recipientProfile.full_name)}&background=9E2A2B&color=fff&size=200`;
+          conv.mentorUserId = recipientProfile.user_id;
+          conv.projectName = 'Direct Message';
+        }
+
+        setConversations(prev => {
+          const exists = prev.find(c => c.id === conv.id);
+          if (exists) return prev;
+          return [conv, ...prev];
+        });
+
+        setSelectedConversation(conv);
+        setActiveTab('chats');
+      }
+      // Clean up the URL param
+      setSearchParams({});
+    };
+
+    openDirectChat();
+  }, [searchParams, user?.id, loading, setSearchParams]);
+
+  // Subscribe to conversation list changes (debounced)
+  const loadConversationsRef = useRef(loadConversations);
+  loadConversationsRef.current = loadConversations;
+
   useEffect(() => {
     if (!user?.id) return;
-    const sub = subscribeToConversations(user.id, () => {
-      loadConversations();
-    });
-    return () => { sub.unsubscribe(); };
-  }, [user?.id, loadConversations]);
+
+    let timeout: ReturnType<typeof setTimeout>;
+    const debouncedReload = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => loadConversationsRef.current(), 1000);
+    };
+
+    const sub = supabase
+      .channel(`conversations-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations' },
+        debouncedReload
+      )
+      .subscribe();
+
+    return () => {
+      clearTimeout(timeout);
+      sub.unsubscribe();
+    };
+  }, [user?.id]);
 
   // Load messages when conversation is selected
   useEffect(() => {
@@ -215,6 +286,27 @@ export default function MessagesPage() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const renderMessageText = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline opacity-90 hover:opacity-100 break-all"
+          >
+            {part.length > 50 ? part.slice(0, 47) + '...' : part}
+          </a>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
   const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
 
   return (
@@ -228,7 +320,7 @@ export default function MessagesPage() {
 
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-md h-[600px] flex overflow-hidden">
         {/* Left Sidebar */}
-        <div className="w-80 border-r border-slate-200/80 flex flex-col bg-slate-50/50 shrink-0">
+        <div className="w-80 md:w-[340px] border-r border-slate-200/80 flex flex-col bg-white shrink-0">
           {/* Tabs */}
           <div className="flex border-b border-slate-200/80 bg-white">
             <button
@@ -271,7 +363,7 @@ export default function MessagesPage() {
           </div>
 
           {/* List */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {activeTab === 'chats' ? (
               <>
                 {filteredConversations.length === 0 && (
@@ -403,12 +495,26 @@ export default function MessagesPage() {
                   />
                   <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h4 className="text-xs font-bold text-slate-800">{selectedConversation.mentorName}</h4>
                   <p className="text-[10px] text-[#9E2A2B] font-bold tracking-wider mt-0.5 uppercase">
-                    Mentor · {selectedConversation.projectName}
+                    {selectedConversation.projectName}
                   </p>
                 </div>
+                {userRole !== 'student' && myAssessments.length > 0 && selectedConversation.mentorUserId && (
+                  <button
+                    onClick={() => setInviteModal({
+                      open: true,
+                      studentUserId: selectedConversation.mentorUserId,
+                      studentName: selectedConversation.mentorName,
+                      conversationId: selectedConversation.id,
+                    })}
+                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200 cursor-pointer flex items-center gap-1.5 transition-all"
+                    title="Send Verification Test"
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5" /> Send Test
+                  </button>
+                )}
               </div>
 
               {/* Messages */}
@@ -436,13 +542,13 @@ export default function MessagesPage() {
                     />
                     <div className="space-y-1">
                       <div
-                        className={`p-3.5 rounded-2xl text-xs font-medium leading-relaxed shadow-xs border ${
+                        className={`p-3 rounded-2xl text-xs font-medium leading-relaxed shadow-xs border max-w-full break-words ${
                           m.isMe
                             ? 'bg-[#9E2A2B] text-white border-transparent rounded-tr-none'
                             : 'bg-white text-slate-800 border-slate-100 rounded-tl-none'
                         }`}
                       >
-                        {m.text}
+                        {renderMessageText(m.text)}
                       </div>
                       <p className={`text-[10px] text-slate-400 font-bold tracking-wide flex items-center gap-1 ${m.isMe ? 'justify-end' : ''}`}>
                         <Clock className="w-3 h-3" />
@@ -495,6 +601,16 @@ export default function MessagesPage() {
           )}
         </div>
       </div>
+
+      <InviteStudentModal
+        isOpen={inviteModal.open}
+        onClose={() => setInviteModal({ open: false, studentUserId: '', studentName: '', conversationId: '' })}
+        assessmentId={myAssessments[0]?.id || ''}
+        studentUserId={inviteModal.studentUserId}
+        studentName={inviteModal.studentName}
+        conversationId={inviteModal.conversationId}
+        onInvited={() => addToast('Test invitation sent!', 'success')}
+      />
     </div>
   );
 }

@@ -308,59 +308,58 @@ export async function getUserConversations(userId: string): Promise<Conversation
 
   if (!profile) return [];
 
-  let query;
-  if (profile.role === 'student') {
-    query = supabase
-      .from('conversations')
-      .select('*')
-      .eq('student_id', profile.id);
-  } else if (profile.role === 'alumni') {
-    query = supabase
-      .from('conversations')
-      .select('*')
-      .eq('mentor_profile_id', profile.id);
-  } else {
-    return [];
-  }
+  // Fetch ALL conversations where user is either student or mentor
+  const { data: conversations, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .or(`student_id.eq.${profile.id},mentor_profile_id.eq.${profile.id}`)
+    .order('last_message_at', { ascending: false });
 
-  const { data: conversations, error } = await query.order('last_message_at', { ascending: false });
+  if (error || !conversations || conversations.length === 0) return [];
 
-  if (error || !conversations) return [];
+  // Batch-fetch all other-party profiles in one query
+  const otherPartyIds = conversations.map((conv) =>
+    conv.student_id === profile.id ? conv.mentor_profile_id : conv.student_id
+  );
+  const uniqueOtherIds = [...new Set(otherPartyIds)];
 
-  // Enrich with other party's profile info
-  const enriched: Conversation[] = [];
-  for (const conv of conversations) {
-    const otherPartyId = profile.role === 'student' ? conv.mentor_profile_id : conv.student_id;
-    const { data: otherProfile } = await supabase
-      .from('profiles')
-      .select('id, full_name, avatar_url, user_id')
-      .eq('id', otherPartyId)
-      .single();
+  const { data: otherProfiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, avatar_url, user_id')
+    .in('id', uniqueOtherIds);
 
-    const { data: project } = await supabase
+  const profileMap = new Map((otherProfiles || []).map((p) => [p.id, p]));
+
+  // Batch-fetch projects (only non-null project IDs)
+  const projectIds = [...new Set(conversations.map((c) => c.project_id).filter(Boolean))];
+  let projectMap = new Map<string, string>();
+  if (projectIds.length > 0) {
+    const { data: projects } = await supabase
       .from('projects')
-      .select('name')
-      .eq('id', conv.project_id)
-      .single();
-
-    if (otherProfile) {
-      enriched.push({
-        id: conv.id,
-        studentId: conv.student_id,
-        mentorProfileId: conv.mentor_profile_id,
-        mentorName: profile.role === 'student' ? otherProfile.full_name : (enriched.length === 0 ? '' : ''),
-        mentorAvatar: otherProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(otherProfile.full_name)}&background=9E2A2B&color=fff&size=200`,
-        mentorUserId: otherProfile.user_id,
-        projectId: conv.project_id,
-        projectName: project?.name || 'Unknown Project',
-        lastMessageText: conv.last_message_text || '',
-        lastMessageAt: conv.last_message_at,
-        createdAt: conv.created_at,
-      });
-    }
+      .select('id, name')
+      .in('id', projectIds);
+    projectMap = new Map((projects || []).map((p) => [p.id, p.name]));
   }
 
-  return enriched;
+  return conversations.map((conv) => {
+    const otherPartyId = conv.student_id === profile.id ? conv.mentor_profile_id : conv.student_id;
+    const otherProfile = profileMap.get(otherPartyId);
+    if (!otherProfile) return null;
+
+    return {
+      id: conv.id,
+      studentId: conv.student_id,
+      mentorProfileId: conv.mentor_profile_id,
+      mentorName: otherProfile.full_name,
+      mentorAvatar: otherProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(otherProfile.full_name)}&background=9E2A2B&color=fff&size=200`,
+      mentorUserId: otherProfile.user_id,
+      projectId: conv.project_id,
+      projectName: conv.project_id ? (projectMap.get(conv.project_id) || 'Unknown Project') : 'Direct Message',
+      lastMessageText: conv.last_message_text || '',
+      lastMessageAt: conv.last_message_at,
+      createdAt: conv.created_at,
+    };
+  }).filter(Boolean) as Conversation[];
 }
 
 // ============================================================
@@ -626,6 +625,75 @@ export interface ProjectMemberInfo {
   profileId: string;
   fullName: string;
   avatarUrl: string;
+}
+
+// ============================================================
+// DIRECT MESSAGING (no project required)
+// ============================================================
+
+/** Get or create a direct conversation between two users (no project). */
+export async function getOrCreateDirectConversation(
+  senderUserId: string,
+  recipientUserId: string
+): Promise<Conversation | null> {
+  // Resolve both profile IDs
+  const { data: senderProfile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('user_id', senderUserId)
+    .single();
+
+  const { data: recipientProfile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('user_id', recipientUserId)
+    .single();
+
+  if (!senderProfile || !recipientProfile) return null;
+
+  // Check for existing direct conversation (project_id IS NULL)
+  const { data: existing } = await supabase
+    .from('conversations')
+    .select('*')
+    .or(
+      `and(student_id.eq.${senderProfile.id},mentor_profile_id.eq.${recipientProfile.id}),and(student_id.eq.${recipientProfile.id},mentor_profile_id.eq.${senderProfile.id})`
+    )
+    .is('project_id', null)
+    .maybeSingle();
+
+  if (existing) {
+    return formatConversation(existing);
+  }
+
+  // Create new direct conversation
+  const { data: newConv, error } = await supabase
+    .from('conversations')
+    .insert([{
+      student_id: senderProfile.id,
+      mentor_profile_id: recipientProfile.id,
+      project_id: null,
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating direct conversation:', error);
+    return null;
+  }
+
+  return formatConversation(newConv);
+}
+
+/** Send a direct message (creates conversation if needed). */
+export async function sendDirectMessage(
+  senderUserId: string,
+  recipientUserId: string,
+  text: string
+): Promise<ChatMessage | null> {
+  const conv = await getOrCreateDirectConversation(senderUserId, recipientUserId);
+  if (!conv) return null;
+
+  return sendMessage(conv.id, senderUserId, text);
 }
 
 /** Real member roster for a project, joined from profiles. */

@@ -77,7 +77,10 @@ export default function Layout() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   const handleNav = (view: string) => {
-    navigate(view === 'home' ? '/' : `/${view}`);
+    if (view === 'feed') navigate('/');
+    else if (view.startsWith('admin-')) navigate(`/${view.replace('admin-', 'admin/')}`);
+    else if (view === 'divider-admin') return;
+    else navigate(`/${view}`);
     setIsMobileMenuOpen(false);
   };
 
@@ -95,7 +98,7 @@ export default function Layout() {
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => { handleNav('home'); setSearchQuery(''); }}>
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => { handleNav('feed'); setSearchQuery(''); }}>
               <div className="w-8 h-8 rounded-lg bg-[#9E2A2B] flex items-center justify-center shadow-sm shrink-0">
                 <div className="w-3.5 h-3.5 border-2 border-white rotate-45 transform" />
               </div>
@@ -242,20 +245,6 @@ export default function Layout() {
         {/* Column 1: Sidebar Navigation (Desktop) */}
         <div className="hidden md:flex md:flex-col md:col-span-3 h-fit sticky top-24 gap-6">
           <Sidebar activeView={activeView} onNavigate={handleNav} userRole={userRole} />
-
-          <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-sm space-y-3">
-            <span className="text-[10px] font-extrabold text-slate-400 tracking-wider uppercase block">
-              My Memberships
-            </span>
-            <div className="flex items-center gap-2">
-              <div className="flex -space-x-1.5 overflow-hidden">
-                <img className="inline-block h-6.5 w-6.5 rounded-full ring-2 ring-white object-cover" src="https://ui-avatars.com/api/?name=M1&background=random&size=150" alt="M1" referrerPolicy="no-referrer" />
-                <img className="inline-block h-6.5 w-6.5 rounded-full ring-2 ring-white object-cover" src="https://ui-avatars.com/api/?name=M2&background=random&size=150" alt="M2" referrerPolicy="no-referrer" />
-                <img className="inline-block h-6.5 w-6.5 rounded-full ring-2 ring-white object-cover" src="https://ui-avatars.com/api/?name=M3&background=random&size=150" alt="M3" referrerPolicy="no-referrer" />
-              </div>
-              <span className="text-[11px] font-bold text-slate-500 font-sans">+4</span>
-            </div>
-          </div>
         </div>
 
         {/* Column 2: Center Main scrollable Feed */}

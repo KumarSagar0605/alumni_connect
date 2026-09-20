@@ -8,7 +8,12 @@ import { useState } from 'react';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
-import HomePage from './pages/HomePage';
+import FeedPage from './pages/FeedPage';
+import CommunityDetailPage from './pages/CommunityDetailPage';
+import AdminCommunitiesPage from './pages/AdminCommunitiesPage';
+import AdminClubsPage from './pages/AdminClubsPage';
+import AdminProjectsPage from './pages/AdminProjectsPage';
+import AdminEventsPage from './pages/AdminEventsPage';
 import ClubsPage from './pages/ClubsPage';
 import ProjectsPage from './pages/ProjectsPage';
 import MentorsPage from './pages/MentorsPage';
@@ -18,6 +23,7 @@ import MessagesPage from './pages/MessagesPage';
 import MyProfile from './pages/MyProfile';
 import NotFoundPage from './pages/NotFoundPage';
 import ResumeAnalyzerPage from './pages/ResumeAnalyzerPage';
+import TestPortal from './pages/TestPortal';
 
 function AppLoader() {
   return (
@@ -51,8 +57,32 @@ function AuthenticatedRoutes() {
   return (
     <AppProvider>
       <Routes>
+        {/* Test portal — fullscreen, no Layout wrapper */}
+        <Route path="/test/:token" element={<TestPortal />} />
+
         <Route element={<Layout />}>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<FeedPage />} />
+          <Route path="/community/:id" element={<CommunityDetailPage />} />
+          <Route path="/admin/communities" element={
+            <ProtectedRoute allowedRoles={['admin', 'head']}>
+              <AdminCommunitiesPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/clubs" element={
+            <ProtectedRoute allowedRoles={['admin', 'head']}>
+              <AdminClubsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/projects" element={
+            <ProtectedRoute allowedRoles={['admin', 'head']}>
+              <AdminProjectsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/events" element={
+            <ProtectedRoute allowedRoles={['admin', 'head']}>
+              <AdminEventsPage />
+            </ProtectedRoute>
+          } />
           <Route path="/clubs" element={<ClubsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/mentors" element={<MentorsPage />} />

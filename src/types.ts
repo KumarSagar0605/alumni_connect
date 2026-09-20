@@ -64,9 +64,11 @@ export interface ProjectMentor {
 }
 
 export interface ProjectMember {
+  id?: string;
   profileId: string;
   fullName: string;
   avatarUrl: string;
+  role?: 'lead' | 'member';
 }
 
 export interface Event {
@@ -152,4 +154,82 @@ export interface ChatMessage {
   isMe: boolean;
   createdAt: string;
   isRead: boolean;
+}
+
+export interface ClubMember {
+  id: string;
+  clubId: string;
+  profileId: string;
+  role: 'lead' | 'member';
+  joinedAt: string;
+  profile?: {
+    id: string;
+    fullName: string;
+    avatarUrl: string | null;
+    role: string;
+  };
+}
+
+export interface EventHost {
+  id: string;
+  eventId: string;
+  profileId: string;
+  role: 'lead' | 'host' | 'member';
+  joinedAt: string;
+  profile?: {
+    id: string;
+    fullName: string;
+    avatarUrl: string | null;
+    role: string;
+  };
+}
+
+export interface Community {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  memberCount?: number;
+  isMember?: boolean;
+  myRole?: 'lead' | 'member' | null;
+  membersList?: CommunityMember[];
+}
+
+export interface CommunityMember {
+  id: string;
+  communityId: string;
+  profileId: string;
+  role: 'lead' | 'member';
+  joinedAt: string;
+  profile?: {
+    id: string;
+    fullName: string;
+    avatarUrl: string | null;
+    role: string;
+  };
+}
+
+export interface CommunityPost {
+  id: string;
+  communityId: string;
+  authorId: string | null;
+  title: string;
+  content: string;
+  postType: 'event' | 'announcement' | 'update';
+  image: string;
+  eventDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author?: {
+    id: string;
+    fullName: string;
+    avatarUrl: string | null;
+  };
+  community?: {
+    id: string;
+    name: string;
+  };
 }

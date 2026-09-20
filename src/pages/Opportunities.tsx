@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Briefcase,
   MapPin,
@@ -22,10 +23,31 @@ import {
   ChevronUp,
   Star,
   Plus,
+  Trash2,
+  Shield,
+  ClipboardCheck,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
 import { rankStudentsAgainstJD, type RankedStudent } from '../services/geminiService';
+import { hasAssessmentForJD, getCompositeScoresForJD, saveResumeMatchScores } from '../services/assessmentService';
+import GenerateAssessmentModal from '../components/GenerateAssessmentModal';
+import InviteStudentModal from '../components/InviteStudentModal';
+
+const STORAGE_KEY_PREFIX = 'cia_opportunities_';
+
+interface SavedOpportunity {
+  title: string;
+  department: string;
+  location: string;
+  experience: string;
+  compensation: string;
+  skills: string[];
+  description: string;
+  candidates: MatchedCandidate[];
+  savedAt: string;
+}
 
 interface MatchedCandidate {
   user_id: string;
@@ -40,9 +62,13 @@ interface MatchedCandidate {
 }
 
 export default function Opportunities() {
-  const { addToast } = useApp();
+  const { addToast, user } = useApp();
+  const navigate = useNavigate();
 
-  // Form state
+  // User-specific storage key
+  const storageKey = user?.id ? `cia_opportunities_${user.id}` : null;
+
+  // Form state — initialized from sessionStorage
   const [title, setTitle] = useState('');
   const [department, setDepartment] = useState('');
   const [location, setLocation] = useState('');
@@ -66,12 +92,41 @@ export default function Opportunities() {
   const [msgText, setMsgText] = useState('');
   const [msgBroadcast, setMsgBroadcast] = useState(false);
 
-  // Load existing opportunity
+  // Assessment state
+  const { userRole } = useAuth();
+  const [existingAssessment, setExistingAssessment] = useState(null);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [inviteModal, setInviteModal] = useState<{ open: boolean; studentUserId: string; studentName: string }>({ open: false, studentUserId: '', studentName: '' });
+  const [compositeScores, setCompositeScores] = useState({});
+  const [sortByVerified, setSortByVerified] = useState(false);
+
+  // Load from sessionStorage on mount, then try Supabase
   useEffect(() => {
+    // 1) Restore from sessionStorage first (instant)
+    try {
+      const saved = storageKey ? sessionStorage.getItem(storageKey) : null;
+      if (saved) {
+        const parsed: SavedOpportunity = JSON.parse(saved);
+        if (parsed.title) setTitle(parsed.title);
+        if (parsed.department) setDepartment(parsed.department);
+        if (parsed.location) setLocation(parsed.location);
+        if (parsed.experience) setExperience(parsed.experience);
+        if (parsed.compensation) setCompensation(parsed.compensation);
+        if (parsed.skills) setSkills(parsed.skills);
+        if (parsed.description) setDescription(parsed.description);
+        if (parsed.candidates && parsed.candidates.length > 0) {
+          setCandidates(parsed.candidates);
+          setHasSearched(true);
+        }
+      }
+    } catch {}
+
+    // 2) Also try Supabase as backup
     const fetchOpportunity = async () => {
       const { data } = await supabase.from('opportunities').select('*').limit(1).single();
       if (data && data.title !== 'Initial Opportunity') {
         setOpportunityId(data.id);
+        // Supabase data overwrites sessionStorage if it exists
         if (data.title) setTitle(data.title);
         if (data.department) setDepartment(data.department);
         if (data.location) setLocation(data.location);
@@ -88,13 +143,68 @@ export default function Opportunities() {
     fetchOpportunity();
   }, []);
 
+  // Load assessment data for this JD
+  useEffect(() => {
+    if (!opportunityId || !user?.id) return;
+    const loadAssessment = async () => {
+      const assessment = await hasAssessmentForJD(user.id, opportunityId);
+      setExistingAssessment(assessment);
+      if (assessment) {
+        const scores = await getCompositeScoresForJD(opportunityId);
+        const map = {};
+        scores.forEach((s) => { map[s.studentId] = s; });
+        setCompositeScores(map);
+      }
+    };
+    loadAssessment();
+  }, [opportunityId, user?.id]);
+
+  // Save to sessionStorage + Supabase
   const syncToDb = async (updates: any) => {
-    if (!opportunityId) return;
+    // Always save to sessionStorage (instant, survives navigation)
     try {
-      await supabase.from('opportunities').update(updates).eq('id', opportunityId);
-    } catch (err) {
-      console.error('Failed to sync:', err);
+      const current = {
+        title,
+        department,
+        location,
+        experience,
+        compensation,
+        skills,
+        description,
+        candidates,
+        savedAt: new Date().toISOString(),
+      };
+      // Merge updates into current
+      const merged = { ...current, ...updates };
+      if (storageKey) sessionStorage.setItem(storageKey, JSON.stringify(merged));
+    } catch {}
+
+    // Also try Supabase
+    if (opportunityId) {
+      try {
+        await supabase.from('opportunities').update(updates).eq('id', opportunityId);
+      } catch (err) {
+        console.error('Failed to sync to Supabase:', err);
+      }
     }
+  };
+
+  // Clear saved opportunity
+  const handleClearOpportunity = () => {
+    if (!window.confirm('Clear the current opportunity and all shortlisted candidates?')) return;
+    setTitle('');
+    setDepartment('');
+    setLocation('');
+    setExperience('Intermediate (Year 3+)');
+    setCompensation('');
+    setSkills([]);
+    setDescription('');
+    setCandidates([]);
+    setHasSearched(false);
+    setOpportunityId(null);
+    setFilterSkill('All');
+    if (storageKey) sessionStorage.removeItem(storageKey);
+    addToast('Opportunity cleared.', 'info');
   };
 
   // Add skill
@@ -158,6 +268,21 @@ export default function Opportunities() {
       setCandidates(matched);
       setHasSearched(true);
 
+      // Save everything to sessionStorage explicitly
+      try {
+        if (storageKey) sessionStorage.setItem(storageKey, JSON.stringify({
+          title,
+          department,
+          location,
+          experience,
+          compensation,
+          skills,
+          description,
+          candidates: matched,
+          savedAt: new Date().toISOString(),
+        }));
+      } catch {}
+
       syncToDb({
         title,
         department,
@@ -196,8 +321,12 @@ export default function Opportunities() {
   };
 
   // Message
-  const openMessageModal = (name: string, isBroadcast = false) => {
-    setMsgTargetName(name);
+  const handleMessageCandidate = (userId: string) => {
+    navigate(`/messages?user_id=${userId}`);
+  };
+
+  const openMessageModal = (isBroadcast = false) => {
+    setMsgTargetName('Top Matches');
     setMsgBroadcast(isBroadcast);
     setMsgText('');
     setIsMsgModalOpen(true);
@@ -212,11 +341,30 @@ export default function Opportunities() {
     setIsMsgModalOpen(false);
   };
 
+  // Assessment handlers
+  const handleGenerateComplete = async () => {
+    if (!user?.id || !opportunityId) return;
+    const assessment = await hasAssessmentForJD(user.id, opportunityId);
+    setExistingAssessment(assessment);
+    addToast('Assessment generated successfully!', 'success');
+  };
+
+  const handleInviteStudent = (userId: string, name: string) => {
+    setInviteModal({ open: true, studentUserId: userId, studentName: name });
+  };
+
   // Filter & sort
   const allSkills = [...new Set(candidates.flatMap((c) => c.skills || []))];
   const filteredCandidates = candidates
     .filter((c) => filterSkill === 'All' || (c.skills || []).some((s) => s.toLowerCase() === filterSkill.toLowerCase()))
-    .sort((a, b) => sortBy === 'match' ? b.matchScore - a.matchScore : b.cgpa - a.cgpa);
+    .sort((a, b) => {
+      if (sortByVerified) {
+        const aScore = compositeScores[a.user_id]?.compositeScore ?? -1;
+        const bScore = compositeScores[b.user_id]?.compositeScore ?? -1;
+        return bScore - aScore;
+      }
+      return sortBy === 'match' ? b.matchScore - a.matchScore : b.cgpa - a.cgpa;
+    });
 
   const shortlistedCount = candidates.filter((c) => c.shortlisted).length;
   const avgCgpa = candidates.length > 0 ? (candidates.reduce((s, c) => s + c.cgpa, 0) / candidates.length).toFixed(1) : '0';
@@ -237,13 +385,84 @@ export default function Opportunities() {
             Post a role and find the best matching student candidates using AI.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="px-3 py-1 bg-[#FDF2F2] text-[#9E2A2B] text-xs font-bold rounded-full border border-rose-100">
             Candidates: {candidates.length}
           </span>
           <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-100">
             Shortlisted: {shortlistedCount}
           </span>
+          {hasSearched && existingAssessment && (
+            <button
+              onClick={() => setSortByVerified(!sortByVerified)}
+              className={`px-3 py-1 text-xs font-bold rounded-full border cursor-pointer flex items-center gap-1 transition-all ${
+                sortByVerified
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+              }`}
+            >
+              <Shield className="w-3 h-3" /> {sortByVerified ? 'Verified Rank' : 'Sort: Resume'}
+            </button>
+          )}
+          {hasSearched && (
+            <button
+              onClick={async () => {
+                if (!opportunityId && title.trim()) {
+                  try {
+                    const fullJD = [
+                      `Title: ${title}`,
+                      department && `Department: ${department}`,
+                      location && `Location: ${location}`,
+                      experience && `Experience: ${experience}`,
+                      compensation && `Compensation: ${compensation}`,
+                      skills.length > 0 && `Required Skills: ${skills.join(', ')}`,
+                      '',
+                      `Description:\n${description}`,
+                    ].filter(Boolean).join('\n');
+
+                    const { data, error: insertErr } = await supabase
+                      .from('opportunities')
+                      .insert([{
+                        title,
+                        department,
+                        location,
+                        experience,
+                        compensation,
+                        skills,
+                        description: fullJD,
+                      }])
+                      .select('id')
+                      .single();
+                    if (insertErr) throw insertErr;
+                    if (data?.id) {
+                      setOpportunityId(data.id);
+                    } else {
+                      throw new Error('No ID returned from insert.');
+                    }
+                  } catch (err: any) {
+                    addToast(err.message || 'Failed to save opportunity. Please try again.', 'error');
+                    return;
+                  }
+                }
+                if (!opportunityId) {
+                  addToast('No opportunity ID. Please search first.', 'error');
+                  return;
+                }
+                setShowGenerateModal(true);
+              }}
+              className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full border border-indigo-200 cursor-pointer flex items-center gap-1 transition-all"
+            >
+              <ClipboardCheck className="w-3 h-3" /> {existingAssessment ? 'View Assessment' : 'Create Test'}
+            </button>
+          )}
+          {hasSearched && (
+            <button
+              onClick={handleClearOpportunity}
+              className="px-3 py-1 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 text-xs font-bold rounded-full border border-slate-200 hover:border-red-200 cursor-pointer flex items-center gap-1 transition-all"
+            >
+              <Trash2 className="w-3 h-3" /> Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -348,7 +567,7 @@ export default function Opportunities() {
             </div>
             <div className="space-y-2">
               <button
-                onClick={() => openMessageModal('Top Matches', true)}
+                onClick={() => openMessageModal(true)}
                 disabled={candidates.length === 0}
                 className="w-full py-2.5 bg-[#9E2A2B] hover:bg-[#802223] text-white text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
@@ -421,8 +640,11 @@ export default function Opportunities() {
                   key={cand.user_id}
                   candidate={cand}
                   rank={index}
+                  compositeScore={compositeScores[cand.user_id]}
                   onToggleShortlist={() => toggleShortlist(cand.user_id)}
-                  onMessage={() => openMessageModal(cand.full_name)}
+                  onMessage={() => handleMessageCandidate(cand.user_id)}
+                  onSendTest={() => handleInviteStudent(cand.user_id, cand.full_name)}
+                  hasAssessment={!!existingAssessment}
                 />
               ))}
             </div>
@@ -456,15 +678,36 @@ export default function Opportunities() {
           </div>
         </div>
       )}
+
+      {/* Assessment Modals */}
+      <GenerateAssessmentModal
+        isOpen={showGenerateModal}
+        onClose={() => setShowGenerateModal(false)}
+        jdId={opportunityId || ''}
+        jdText={description}
+        jdTitle={title}
+        onGenerated={handleGenerateComplete}
+      />
+      <InviteStudentModal
+        isOpen={inviteModal.open}
+        onClose={() => setInviteModal({ open: false, studentUserId: '', studentName: '' })}
+        assessmentId={existingAssessment?.id || ''}
+        studentUserId={inviteModal.studentUserId}
+        studentName={inviteModal.studentName}
+        onInvited={() => addToast('Test invitation sent!', 'success')}
+      />
     </div>
   );
 }
 
-function CandidateCard({ candidate, rank, onToggleShortlist, onMessage }: {
+function CandidateCard({ candidate, rank, compositeScore, onToggleShortlist, onMessage, onSendTest, hasAssessment }: {
   candidate: MatchedCandidate;
   rank: number;
+  compositeScore?: { verifiedTestScore: number | null; compositeScore: number | null; verifiedStatus: boolean };
   onToggleShortlist: () => void;
   onMessage: () => void;
+  onSendTest: () => void;
+  hasAssessment: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -492,6 +735,16 @@ function CandidateCard({ candidate, rank, onToggleShortlist, onMessage }: {
             <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-full border ${getScoreColor(candidate.matchScore)}`}>
               {candidate.matchScore}% Match
             </span>
+            {compositeScore?.verifiedStatus && compositeScore.compositeScore != null && (
+              <span className="px-2.5 py-0.5 text-[10px] font-black rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200">
+                Verified: {Math.round(compositeScore.compositeScore)}%
+              </span>
+            )}
+            {!compositeScore?.verifiedStatus && hasAssessment && (
+              <span className="px-2.5 py-0.5 text-[10px] font-black rounded-full border bg-slate-50 text-slate-500 border-slate-200">
+                Unverified (Test Pending)
+              </span>
+            )}
             <span className="text-[10px] font-bold text-slate-400">CGPA: {candidate.cgpa.toFixed(1)}</span>
           </div>
           {candidate.summary && (
@@ -507,6 +760,11 @@ function CandidateCard({ candidate, rank, onToggleShortlist, onMessage }: {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {hasAssessment && (
+            <button onClick={onSendTest} className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition-all cursor-pointer border border-indigo-100" title="Send Verification Test">
+              <ClipboardCheck className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={onToggleShortlist}
             className={`px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Home, Users, Rocket, UserCheck, CalendarDays, MessageSquare, LogOut, Sparkles, User, FileSearch } from 'lucide-react';
+import { Home, Users, Rocket, UserCheck, CalendarDays, MessageSquare, LogOut, Sparkles, User, FileSearch, Shield, FolderOpen, Briefcase, PartyPopper } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 interface SidebarProps {
@@ -11,7 +11,7 @@ interface SidebarProps {
 
 export default function Sidebar({ activeView, onNavigate, unreadCount = 0, userRole }: SidebarProps) {
   const menuItems = [
-    { id: 'home', label: 'Home', icon: Home },
+    { id: 'feed', label: 'Feed', icon: Home },
     { id: 'clubs', label: 'Clubs', icon: Users },
     { id: 'projects', label: 'Projects', icon: Rocket },
     { id: 'mentors', label: 'Mentors', icon: UserCheck },
@@ -19,6 +19,11 @@ export default function Sidebar({ activeView, onNavigate, unreadCount = 0, userR
     { id: 'opportunities', label: 'Opportunities', icon: Sparkles, roles: ['alumni', 'admin', 'head'] },
     { id: 'messages', label: 'Messages', icon: MessageSquare, badge: unreadCount },
     { id: 'resume', label: 'Resume Analyzer', icon: FileSearch, roles: ['student'] },
+    { id: 'divider-admin', label: '— Admin —', icon: Shield, roles: ['admin', 'head'], isDivider: true },
+    { id: 'admin-communities', label: 'Manage Communities', icon: Shield, roles: ['admin', 'head'] },
+    { id: 'admin-clubs', label: 'Manage Clubs', icon: FolderOpen, roles: ['admin', 'head'] },
+    { id: 'admin-projects', label: 'Manage Projects', icon: Briefcase, roles: ['admin', 'head'] },
+    { id: 'admin-events', label: 'Manage Events', icon: PartyPopper, roles: ['admin', 'head'] },
     { id: 'profile', label: 'My Profile', icon: User },
   ].filter(item => !item.roles || item.roles.includes(userRole || ''));
 
@@ -31,8 +36,15 @@ export default function Sidebar({ activeView, onNavigate, unreadCount = 0, userR
     <div className="flex flex-col bg-white border border-slate-200/80 p-4 rounded-2xl shadow-sm space-y-4">
       <nav className="space-y-1 flex-1">
         {menuItems.map((item) => {
+          if (item.isDivider) {
+            return (
+              <div key={item.id} className="pt-3 pb-1 px-4">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.label}</p>
+              </div>
+            );
+          }
           const Icon = item.icon;
-          const isActive = activeView === item.id || (item.id === 'home' && activeView === '');
+          const isActive = activeView === item.id || (item.id === 'feed' && activeView === '');
           return (
             <button
               key={item.id}
