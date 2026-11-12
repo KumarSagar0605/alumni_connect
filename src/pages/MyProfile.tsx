@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as pdfjsLib from "pdfjs-dist";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 import {
   User,
   Mail,
@@ -137,7 +139,7 @@ export default function MyProfile() {
         .from('resumes')
         .select('id, file_name, skills, experience, education, cgpa, projects, certifications, summary')
         .eq('user_id', user.id)
-        .single()
+        .maybeSingle()
         .then(({ data }) => {
           if (data) {
             setHasResume(true);
@@ -252,8 +254,6 @@ export default function MyProfile() {
     setParsingResume(true);
     try {
       // Dynamic import to avoid bundling pdf.js unless needed
-      const pdfjsLib = await import('pdfjs-dist');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -332,6 +332,21 @@ export default function MyProfile() {
     }
   };
 
+  // ------------------------------------------------------------
+  // Students manage their details through the Resume Analyzer, so
+  // the manual profile sections (summary, skills, education,
+  // projects, contact) are shown only to alumni/staff.
+  // ------------------------------------------------------------
+  const canManualEdit = userRole !== 'student';
+
+  // Header education: prefer manually-entered profiles data, fall
+  // back to the resume-extracted education (students don't edit it
+  // manually, so their header would otherwise show placeholders).
+  const primaryEdu = resumeEducation[0];
+  const headerSchool = education.school || primaryEdu?.institution || '';
+  const headerYears = education.years || primaryEdu?.year || '';
+  const headerDegree = education.degree || primaryEdu?.degree || '';
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -366,12 +381,12 @@ export default function MyProfile() {
                 </span>
               </div>
               <p className="text-xs sm:text-sm font-extrabold text-slate-700">
-                {education.school || 'Your School'} {education.years ? `\u2022 ${education.years}` : ''}
+                {headerSchool || 'Your School'} {headerYears ? `\u2022 ${education.years}` : ''}
               </p>
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs font-semibold text-slate-400 mt-1">
                 <span className="flex items-center gap-1">
                   <GraduationCap className="w-4 h-4 text-slate-300" />
-                  <span>{education.degree || 'Your Degree'}</span>
+                  <span>{headerDegree || 'Your Degree'}</span>
                 </span>
                 {resumeCgpa > 0 && (
                   <span className="flex items-center gap-1 px-2 py-0.5 bg-[#FDF2F2] border border-rose-100 rounded-full text-[#9E2A2B]">
@@ -407,6 +422,24 @@ export default function MyProfile() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-8 space-y-8">
+          {/* Students: profile details come from the resume */}
+          {userRole === 'student' && (
+            <div className="bg-[#FDF2F2]/50 border border-rose-100 rounded-2xl p-4 flex items-start gap-3">
+              <FileText className="w-4 h-4 text-[#9E2A2B] mt-0.5 shrink-0" />
+              <p className="text-[11px] text-slate-600 font-semibold leading-relaxed">
+                Your summary, skills, education and projects are extracted from your
+                resume — upload or update it in the{' '}
+                <a
+                  href="/resume"
+                  className="text-[#9E2A2B] font-bold underline underline-offset-2 hover:text-[#802223]"
+                >
+                  Resume Analyzer
+                </a>{' '}
+                to change them.
+              </p>
+            </div>
+          )}
+
           {/* Full Name */}
           {isEditing && (
             <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-8 shadow-xs space-y-4">
@@ -424,7 +457,8 @@ export default function MyProfile() {
             </div>
           )}
 
-          {/* Bio */}
+          {/* Bio — manual entry hidden for students (resume covers it) */}
+          {canManualEdit && (
           <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-8 shadow-xs space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <BookOpen className="w-5 h-5 text-[#9E2A2B]" />
@@ -442,8 +476,10 @@ export default function MyProfile() {
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">{bio || 'No summary added yet.'}</p>
             )}
           </div>
+          )}
 
-          {/* Skills */}
+          {/* Skills — manual entry hidden for students (resume covers it) */}
+          {canManualEdit && (
           <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-8 shadow-xs space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <Code className="w-5 h-5 text-[#9E2A2B]" />
@@ -474,8 +510,10 @@ export default function MyProfile() {
               </form>
             )}
           </div>
+          )}
 
-          {/* Education */}
+          {/* Education — manual entry hidden for students (resume covers it) */}
+          {canManualEdit && (
           <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-8 shadow-xs space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <GraduationCap className="w-5 h-5 text-[#9E2A2B]" />
@@ -516,8 +554,10 @@ export default function MyProfile() {
               </div>
             )}
           </div>
+          )}
 
-          {/* Projects */}
+          {/* Projects — manual entry hidden for students (resume covers it) */}
+          {canManualEdit && (
           <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-8 shadow-xs space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <Award className="w-5 h-5 text-[#9E2A2B]" />
@@ -564,6 +604,7 @@ export default function MyProfile() {
               </div>
             )}
           </div>
+          )}
 
           {/* Parsed Resume Sections (from uploaded resume) */}
           {hasResume && resumeSkills.length > 0 && (
@@ -721,7 +762,8 @@ export default function MyProfile() {
             </div>
           )}
 
-          {/* Contact */}
+          {/* Contact — manual entry hidden for students (resume covers email) */}
+          {canManualEdit && (
           <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-4">
             <div className="border-b border-slate-100 pb-2.5">
               <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider font-sans">Contact & Socials</h4>
@@ -760,6 +802,7 @@ export default function MyProfile() {
               )}
             </div>
           </div>
+          )}
 
           {/* Superadmin role management (renders only for role === 'admin') */}
           <RoleManager />
